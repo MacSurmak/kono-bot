@@ -96,12 +96,12 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         if doc_sum > 0:
             iiko_by_sum.setdefault(doc_sum, []).append(d)
 
-    # 5. Invariant Sum-Matching Engine (Unit-of-measure agnostic)
-    print("\n[*] Starting Sum-Invariant Bipartite Alignment...")
-    from rapidfuzz import fuzz
+    # 5. Deterministic alignment engine (ZERO fuzzy search, 100% mathematical certainty)
+    print("\n[*] Starting Deterministic Training Engine (Strict Invariants)...")
+    from collections import Counter
 
-    fully_matched_invoices = 0
-    partially_matched_invoices = 0
+    sequential_invoices = 0
+    unique_sum_invoices = 0
     learned_items_count = 0
 
     for doc in parsed_docs:
@@ -120,46 +120,86 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         supplier_id = matched_iiko_doc.findtext("supplier")
         raw_iiko_items = matched_iiko_doc.findall(".//items/item")
 
-        # Extract only active items
-        available_iiko = []
+        # Extract active iiko items
+        iiko_items = []
+        has_inactive = False
         for it in raw_iiko_items:
             p_id = it.findtext("product")
-            if p_id in active_pool:
-                available_iiko.append({
-                    "product_id": p_id,
-                    "name": active_pool[p_id]["name"],
-                    "article": active_pool[p_id]["article"],
-                    "sum": float(it.findtext("sum", 0))
-                })
+            if p_id not in active_pool:
+                has_inactive = True
+                break
+            iiko_items.append({
+                "product_id": p_id,
+                "name": active_pool[p_id]["name"],
+                "article": active_pool[p_id]["article"],
+                "amount": float(it.findtext("amount", 0)),
+                "sum": round(float(it.findtext("sum", 0)), 2)
+            })
 
-        matched_pairs = []
+        if has_inactive or not iiko_items:
+            continue
 
-        # Find best bipartite pairing by matching line sum and maximizing text similarity
-        for d_item in doc.items:
-            best_idx = None
-            best_score = -1
-
-            for idx, i_item in enumerate(available_iiko):
-                # Hard invariant: line total sum with VAT must match to within 0.50 RUB
-                if abs(d_item.sum - i_item["sum"]) < 0.50:
-                    sim_score = fuzz.token_set_ratio(d_item.raw_name.lower(), i_item["name"].lower())
-                    if sim_score > best_score:
-                        best_score = sim_score
-                        best_idx = idx
-
-            if best_idx is not None:
-                chosen_iiko = available_iiko.pop(best_idx)
-                matched_pairs.append({
+        # --- INVARIANT 1: Strict Sequential Order ---
+        # Document entered row-by-row where every line i has identical sum
+        if len(doc.items) == len(iiko_items):
+            is_sequential = True
+            temp_seq = []
+            for d_item, i_item in zip(doc.items, iiko_items):
+                d_sum = round(d_item.sum, 2)
+                if abs(d_sum - i_item["sum"]) >= 0.50:
+                    is_sequential = False
+                    break
+                temp_seq.append({
                     "supplier_id": supplier_id,
                     "raw_name": d_item.raw_name,
-                    "product_id": chosen_iiko["product_id"],
-                    "iiko_name": chosen_iiko["name"],
-                    "article": d_item.article or chosen_iiko["article"]
+                    "product_id": i_item["product_id"],
+                    "iiko_name": i_item["name"],
+                    "article": d_item.article or i_item["article"]
                 })
 
-        # Record mapping votes for all verified sum-matched pairs
-        if matched_pairs:
-            for pair in matched_pairs:
+            if is_sequential:
+                sequential_invoices += 1
+                for pair in temp_seq:
+                    record_mapping_vote(
+                        supplier_id=pair["supplier_id"],
+                        raw_name=pair["raw_name"],
+                        product_id=pair["product_id"],
+                        iiko_name=pair["iiko_name"],
+                        article=pair["article"],
+                        weight=1
+                    )
+                    learned_items_count += 1
+                print(f"[✅ STRICT ORDER] {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(temp_seq)} items)")
+                continue
+
+        # --- INVARIANT 2: Unique-Sum Bijections ---
+        # Only match rows whose sum appears EXACTLY ONCE in Diadoc AND EXACTLY ONCE in iiko.
+        # If a sum appears >= 2 times (e.g. duplicate prices/flavors), SKIP IT completely. No guessing.
+        d_sums = Counter(round(it.sum, 2) for it in doc.items)
+        i_sums = Counter(it["sum"] for it in iiko_items)
+
+        unique_sums = {s for s, count in d_sums.items() if count == 1 and i_sums.get(s) == 1}
+        if not unique_sums:
+            continue
+
+        doc_by_sum = {round(it.sum, 2): it for it in doc.items}
+        iiko_by_sum_row = {it["sum"]: it for it in iiko_items}
+
+        stage2_pairs = []
+        for s in unique_sums:
+            d_it = doc_by_sum[s]
+            i_it = iiko_by_sum_row[s]
+            stage2_pairs.append({
+                "supplier_id": supplier_id,
+                "raw_name": d_it.raw_name,
+                "product_id": i_it["product_id"],
+                "iiko_name": i_it["name"],
+                "article": d_it.article or i_it["article"]
+            })
+
+        if stage2_pairs:
+            unique_sum_invoices += 1
+            for pair in stage2_pairs:
                 record_mapping_vote(
                     supplier_id=pair["supplier_id"],
                     raw_name=pair["raw_name"],
@@ -169,21 +209,15 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     weight=1
                 )
                 learned_items_count += 1
-
-            if len(matched_pairs) == len(doc.items):
-                fully_matched_invoices += 1
-                print(f"[✅ FULL MATCH] {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(matched_pairs)} of {len(doc.items)} lines)")
-            else:
-                partially_matched_invoices += 1
-                print(f"[🔹 PARTIAL]    {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(matched_pairs)} of {len(doc.items)} lines)")
+            print(f"[🎯 UNIQUE SUMS]  {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} (Matched {len(stage2_pairs)} unambiguous items)")
 
     print("\n" + "=" * 70)
-    print("📊 [TRAINING SUMMARY: SUM INVARIANT ALIGNMENT]")
+    print("📊 [DETERMINISTIC TRAINING SUMMARY]")
     print(f"  Processed documents:                {len(parsed_docs)}")
-    print(f"  Fully matched invoices (100% lines): {fully_matched_invoices}")
-    print(f"  Partially matched invoices:          {partially_matched_invoices}")
-    print(f"  TOTAL INVOICES UTILIZED:             {fully_matched_invoices + partially_matched_invoices} of {len(parsed_docs)}")
-    print(f"  TOTAL VERIFIED MAPPINGS IN DB:       {learned_items_count}")
+    print(f"  Matched via strict order:           {sequential_invoices}")
+    print(f"  Matched via unique sum bijections:  {unique_sum_invoices}")
+    print(f"  TOTAL INVOICES UTILIZED:            {sequential_invoices + unique_sum_invoices} of {len(parsed_docs)}")
+    print(f"  TOTAL VERIFIED MAPPINGS IN DB:      {learned_items_count}")
     print("=" * 70)
 
 def main():
