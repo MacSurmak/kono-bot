@@ -13,17 +13,17 @@ init_db()
 
 def train(data_dir: str, override_from: str = None, override_to: str = None):
     if not os.path.exists(data_dir):
-        print(f"[-] Папка '{data_dir}' не найдена!")
+        print(f"[-] Directory '{data_dir}' not found!")
         sys.exit(1)
 
     supported_exts = (".xml", ".pdf")
     files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.lower().endswith(supported_exts)]
     
     if not files:
-        print(f"[-] В папке '{data_dir}' нет поддерживаемых файлов (.xml, .pdf)!")
+        print(f"[-] No supported files (.xml, .pdf) found in '{data_dir}'!")
         return
 
-    print(f"[*] Сканирование {len(files)} файлов в папке '{data_dir}'...")
+    print(f"[*] Scanning {len(files)} files in '{data_dir}'...")
 
     # 1. Parse all documents into memory and calculate date boundaries
     parsed_docs = []
@@ -34,7 +34,6 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             doc = parse_document(file_path)
             if doc and doc.items:
                 parsed_docs.append(doc)
-                # Verify ISO date formatting
                 try:
                     d_obj = datetime.strptime(doc.doc_date, "%Y-%m-%d").date()
                     valid_dates.append(d_obj)
@@ -44,46 +43,44 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             continue
 
     if not parsed_docs:
-        print("[-] Не удалось успешно распарсить ни один документ в папке.")
+        print("[-] Failed to parse any document in directory.")
         return
 
-    print(f"[+] Успешно прочитано документов: {len(parsed_docs)} из {len(files)}")
+    print(f"[+] Successfully parsed documents: {len(parsed_docs)} of {len(files)}")
 
     # 2. Dynamic date range calculation with +/- 5-day boundary buffer
     if valid_dates:
         min_doc_date = min(valid_dates)
         max_doc_date = max(valid_dates)
         
-        # Compensate for delayed manual data entry
         auto_from = (min_doc_date - timedelta(days=5)).strftime("%Y-%m-%d")
         auto_to = (max_doc_date + timedelta(days=5)).strftime("%Y-%m-%d")
         
-        print(f"    Даты в накладных: с {min_doc_date} по {max_doc_date}")
+        print(f"    Document date span: from {min_doc_date} to {max_doc_date}")
     else:
         auto_from = "2026-01-01"
         auto_to = "2026-12-31"
 
-    # Allow CLI arguments to override detected date bounds
     date_from = override_from or auto_from
     date_to = override_to or auto_to
 
-    print(f"    Запрашиваемый период iiko: {date_from} — {date_to} (автоматически с буфером)")
+    print(f"    iiko query window: {date_from} to {date_to} (automated with buffer)")
 
     # 3. Load active inventory pool excluding archive and delivery menus
-    print("\n[*] Загрузка актуального каталога iiko и проверка папок...")
+    print("\n[*] Loading active catalog and verifying folders...")
     active_products = client.get_active_stock_products()
     active_pool = {p["id"]: p for p in active_products}
-    print(f"[+] Разрешенных активных товаров: {len(active_pool)}")
+    print(f"[+] Active inventory pool: {len(active_pool)} (archive and delivery excluded)")
 
     # 4. Fetch historical invoices from iiko for detected period
-    print(f"[*] Выгрузка истории накладных из iiko...")
+    print(f"[*] Querying historical invoices from iiko...")
     inv_resp = client.get(
         "/api/documents/export/incomingInvoice",
         params={"from": date_from, "to": date_to}
     )
     inv_root = ET.fromstring(inv_resp.content)
     iiko_docs = inv_root.findall(".//document")
-    print(f"[+] Найдено накладных в iiko за этот период: {len(iiko_docs)}")
+    print(f"[+] Invoices found in iiko for this period: {len(iiko_docs)}")
 
     # Index iiko invoices for O(1) matching
     iiko_by_num = {}
@@ -99,16 +96,36 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         if doc_sum > 0:
             iiko_by_sum.setdefault(doc_sum, []).append(d)
 
-    # 5. Execute strict sequential matching
-    print("\n[*] Анализ сопоставлений...")
-    perfect_matches = 0
-    learned_items = 0
+    # 5. Multi-pass matching pipeline
+    print("\n[*] Starting Multi-Pass alignment pipeline...")
+    pass1_matched_docs = 0
+    pass2_matched_docs = 0
+    learned_items_count = 0
 
+    unresolved_docs = []
+
+    def extract_iiko_rows(doc_elem):
+        rows = []
+        for it in doc_elem.findall(".//items/item"):
+            p_id = it.findtext("product")
+            if p_id not in active_pool:
+                return None
+            prod = active_pool[p_id]
+            rows.append({
+                "product_id": p_id,
+                "name": prod["name"],
+                "article": prod["article"],
+                "amount": float(it.findtext("amount", 0)),
+                "sum": float(it.findtext("sum", 0))
+            })
+        return rows
+
+    # --- PASS 1: Sequential matches and 100% bijective permutations ---
+    print("\n--- [PASS 1] Exact Sequential and Bijective Permutations ---")
     for doc in parsed_docs:
         target_num = doc.doc_number
         target_sum = round(sum(it.sum for it in doc.items), 2)
 
-        # Match invoice in iiko by incoming number or unique sum
         matched_iiko_doc = iiko_by_num.get(target_num)
         if matched_iiko_doc is None and target_sum in iiko_by_sum:
             candidates = iiko_by_sum[target_sum]
@@ -119,44 +136,32 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             continue
 
         supplier_id = matched_iiko_doc.findtext("supplier")
-        iiko_items = matched_iiko_doc.findall(".//items/item")
-
-        if len(doc.items) != len(iiko_items):
+        iiko_rows = extract_iiko_rows(matched_iiko_doc)
+        if not iiko_rows or len(doc.items) != len(iiko_rows):
             continue
 
-        is_order_perfect = True
-        temp_pairs = []
+        available_iiko = list(iiko_rows)
+        matched_pairs = []
 
-        for d_item, i_item in zip(doc.items, iiko_items):
-            i_amount = float(i_item.findtext("amount", 0))
-            i_sum = float(i_item.findtext("sum", 0))
+        for d_item in doc.items:
+            candidate = None
+            for idx, i_item in enumerate(available_iiko):
+                if abs(d_item.quantity - i_item["amount"]) < 0.01 and abs(d_item.sum - i_item["sum"]) < 1.0:
+                    candidate = available_iiko.pop(idx)
+                    break
 
-            qty_match = abs(d_item.quantity - i_amount) < 0.01
-            sum_match = abs(d_item.sum - i_sum) < 1.0
+            if candidate:
+                matched_pairs.append({
+                    "supplier_id": supplier_id,
+                    "raw_name": d_item.raw_name,
+                    "product_id": candidate["product_id"],
+                    "iiko_name": candidate["name"],
+                    "article": d_item.article or candidate["article"]
+                })
 
-            if not (qty_match and sum_match):
-                is_order_perfect = False
-                break
-
-            p_id = i_item.findtext("product")
-            
-            # Ensure target product is currently active
-            if p_id not in active_pool:
-                is_order_perfect = False
-                break
-
-            prod_info = active_pool[p_id]
-            temp_pairs.append({
-                "supplier_id": supplier_id,
-                "raw_name": d_item.raw_name,
-                "product_id": p_id,
-                "iiko_name": prod_info["name"],
-                "article": d_item.article or prod_info["article"]
-            })
-
-        if is_order_perfect:
-            perfect_matches += 1
-            for pair in temp_pairs:
+        if len(matched_pairs) == len(doc.items):
+            pass1_matched_docs += 1
+            for pair in matched_pairs:
                 record_mapping_vote(
                     supplier_id=pair["supplier_id"],
                     raw_name=pair["raw_name"],
@@ -165,24 +170,110 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     article=pair["article"],
                     weight=1
                 )
-                learned_items += 1
+                learned_items_count += 1
+            print(f"[✅ PASS 1 BIJECTION] {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(matched_pairs)} items)")
+        else:
+            unresolved_docs.append((doc, matched_iiko_doc, supplier_id, iiko_rows))
 
-            print(f"[✅ ИДЕАЛЬНО] {os.path.basename(doc.source_file):<30} | № {target_num:<10} | Сумма: {target_sum:>9.2f} руб. ({len(temp_pairs)} поз.)")
+    # --- PASS 2: Anchor resolution with prior knowledge and elimination ---
+    print(f"\n--- [PASS 2] Anchor Resolution & Deductive Elimination ({len(unresolved_docs)} candidates) ---")
+    from storage import get_consensus_mapping
 
-    print("\n" + "=" * 65)
-    print(f"📊 [ИТОГ ОБУЧЕНИЯ]")
-    print(f"  Обработано документов:          {len(parsed_docs)}")
-    print(f"  Период дат документов:         {min_doc_date} — {max_doc_date}")
-    print(f"  Выгружено из iiko (с буфером):  {date_from} — {date_to}")
-    print(f"  Совпало накладных по порядку:  {perfect_matches}")
-    print(f"  Достоверных связок в БД:       {learned_items}")
-    print("=" * 65)
+    for doc, matched_iiko_doc, supplier_id, iiko_rows in unresolved_docs:
+        target_num = doc.doc_number
+        target_sum = round(sum(it.sum for it in doc.items), 2)
+
+        available_iiko = list(iiko_rows)
+        remaining_doc_items = list(doc.items)
+        resolved_pairs = []
+
+        # Step 2.1: Anchor by previously learned consensus mappings
+        for d_item in list(remaining_doc_items):
+            consensus = get_consensus_mapping(supplier_id, d_item.raw_name)
+            if consensus and not consensus["has_conflict"]:
+                known_pid = consensus["product_id"]
+                match_idx = None
+                for idx, i_item in enumerate(available_iiko):
+                    if i_item["product_id"] == known_pid:
+                        qty_ok = abs(d_item.quantity - i_item["amount"]) < 0.01
+                        sum_ok = abs(d_item.sum - i_item["sum"]) < 1.0
+                        if qty_ok and sum_ok:
+                            match_idx = idx
+                            break
+                if match_idx is not None:
+                    matched_iiko_row = available_iiko.pop(match_idx)
+                    remaining_doc_items.remove(d_item)
+                    resolved_pairs.append({
+                        "supplier_id": supplier_id,
+                        "raw_name": d_item.raw_name,
+                        "product_id": matched_iiko_row["product_id"],
+                        "iiko_name": matched_iiko_row["name"],
+                        "article": d_item.article or matched_iiko_row["article"]
+                    })
+
+        # Step 2.2: Greedy match for remaining lines with unique (quantity, sum)
+        for d_item in list(remaining_doc_items):
+            matching_candidates = [
+                (idx, i_item) for idx, i_item in enumerate(available_iiko)
+                if abs(d_item.quantity - i_item["amount"]) < 0.01 and abs(d_item.sum - i_item["sum"]) < 1.0
+            ]
+            if len(matching_candidates) == 1:
+                idx, candidate = matching_candidates[0]
+                available_iiko.pop(idx)
+                remaining_doc_items.remove(d_item)
+                resolved_pairs.append({
+                    "supplier_id": supplier_id,
+                    "raw_name": d_item.raw_name,
+                    "product_id": candidate["product_id"],
+                    "iiko_name": candidate["name"],
+                    "article": d_item.article or candidate["article"]
+                })
+
+        # Step 2.3: Final elimination if exactly 1 pair remains with matching sum
+        if len(remaining_doc_items) == 1 and len(available_iiko) == 1:
+            last_d = remaining_doc_items[0]
+            last_i = available_iiko[0]
+            if abs(last_d.quantity - last_i["amount"]) < 0.01 and abs(last_d.sum - last_i["sum"]) < 1.0:
+                remaining_doc_items.clear()
+                available_iiko.clear()
+                resolved_pairs.append({
+                    "supplier_id": supplier_id,
+                    "raw_name": last_d.raw_name,
+                    "product_id": last_i["product_id"],
+                    "iiko_name": last_i["name"],
+                    "article": last_d.article or last_i["article"]
+                })
+
+        # If all items resolved in Pass 2
+        if len(resolved_pairs) == len(doc.items):
+            pass2_matched_docs += 1
+            for pair in resolved_pairs:
+                record_mapping_vote(
+                    supplier_id=pair["supplier_id"],
+                    raw_name=pair["raw_name"],
+                    product_id=pair["product_id"],
+                    iiko_name=pair["iiko_name"],
+                    article=pair["article"],
+                    weight=1
+                )
+                learned_items_count += 1
+            print(f"[🎯 PASS 2 ANCHORED]  {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} (Resolved {len(resolved_pairs)} items)")
+
+    total_invoices_matched = pass1_matched_docs + pass2_matched_docs
+    print("\n" + "=" * 70)
+    print(f"📊 [MULTI-PASS TRAINING SUMMARY]")
+    print(f"  Total documents processed:          {len(parsed_docs)}")
+    print(f"  Matched in Pass 1 (Bijections):    {pass1_matched_docs}")
+    print(f"  Matched in Pass 2 (Anchors):       {pass2_matched_docs}")
+    print(f"  TOTAL INVOICES MATCHED:            {total_invoices_matched} of {len(parsed_docs)}")
+    print(f"  VERIFIED MAPPINGS IN DB:           {learned_items_count}")
+    print("=" * 70)
 
 def main():
-    parser = argparse.ArgumentParser(description="Автоматическое обучение базы сопоставлений iiko")
-    parser.add_argument("--dir", default="diadoc_xmls", help="Папка с накладными (по умолчанию: diadoc_xmls)")
-    parser.add_argument("--from-date", dest="override_from", default=None, help="Принудительная дата начала YYYY-MM-DD")
-    parser.add_argument("--to-date", dest="override_to", default=None, help="Принудительная дата конца YYYY-MM-DD")
+    parser = argparse.ArgumentParser(description="Automated multi-pass training for iiko item matcher")
+    parser.add_argument("--dir", default="diadoc_xmls", help="Directory with invoice files (default: diadoc_xmls)")
+    parser.add_argument("--from-date", dest="override_from", default=None, help="Explicit start date YYYY-MM-DD")
+    parser.add_argument("--to-date", dest="override_to", default=None, help="Explicit end date YYYY-MM-DD")
     args = parser.parse_args()
 
     train(args.dir, args.override_from, args.override_to)
