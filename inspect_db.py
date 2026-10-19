@@ -19,7 +19,7 @@ def inspect(search_query: str = ""):
     print(f"   Всего подтверждений/голосов: {total_votes or 0}")
     print("=" * 80)
 
-    # Конфликты
+    # Check for ambiguous item mappings
     cur.execute("""
         SELECT supplier_id, raw_name, COUNT(DISTINCT product_id) as cnt
         FROM supplier_mappings
@@ -44,7 +44,7 @@ def inspect(search_query: str = ""):
     else:
         print("\n✨ ВСЕ СВЯЗКИ 100% ОДНОЗНАЧНЫ! Конфликтов нет.")
 
-    # Поиск с регистронезависимостью по-русски
+    # Case-insensitive Unicode substring search
     if search_query:
         print(f"\n🔍 РЕЗУЛЬТАТЫ ПОИСКА ПО ЗАПРОСУ: '{search_query}'")
         cur.execute("""
@@ -75,7 +75,7 @@ def inspect(search_query: str = ""):
             print(f"{votes:<8} | {raw:<40} | {iiko[:35]:<35}")
     print("=" * 88)
 
-    # 4. Статистика использования ключей Gemini
+    # 4. Gemini key rotation telemetry
     from storage import get_all_gemini_key_stats
     gemini_stats = get_all_gemini_key_stats()
     if gemini_stats:

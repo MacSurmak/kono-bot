@@ -14,22 +14,22 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Режим симуляции (без загрузки в iiko)")
     args = parser.parse_args()
 
-    # 1. Парсинг через единый контракт
+    # 1. Parse document via unified contract
     print(f"\n[*] Чтение документа: {os.path.basename(args.file_path)}...")
     doc = parse_document(args.file_path)
     print(f"[+] Распарсен: № {doc.doc_number} от {doc.doc_date}")
     print(f"    Поставщик: {doc.supplier_name} (ИНН {doc.supplier_inn})")
     print(f"    Позиций:   {len(doc.items)}")
 
-    # 2. Выбор склада и поставщика
+    # 2. Resolve destination store and supplier
     store_id, store_name = resolve_store(doc.consignee_address)
     supplier_id, supplier_name = resolve_supplier(doc.supplier_inn, store_name)
 
-    # 3. Загрузка живого каталога номенклатуры в RAM
+    # 3. Load active stock catalog into RAM
     print(f"\n[*] Загрузка каталога iiko в память...")
     catalog = client.get_active_stock_products()
 
-    # 4. Сопоставление строк
+    # 4. Item matching with consensus resolution
     matched_items = []
     print("\n[*] Сопоставление товаров...")
     for idx, item in enumerate(doc.items, 1):
@@ -51,10 +51,10 @@ def main():
         print("[-] Ни одна позиция не сопоставлена. Импорт отменен.")
         return
 
-    # 5. Сборка XML
+    # 5. Build iiko XML payload
     xml_payload = build_iiko_xml(doc, store_id, supplier_id, matched_items)
 
-    # 6. Обработка флага --dry-run
+    # 6. Dry-run simulation bypass
     if args.dry_run:
         with open("dry_run_preview.xml", "w", encoding="utf-8") as f:
             f.write(xml_payload)
@@ -68,7 +68,7 @@ def main():
         print("="*75)
         return
 
-    # 7. Боевая отправка
+    # 7. Production upload (draft status)
     print(f"\n[*] Отправка черновика на склад {store_name} в iiko...")
     res = client.upload_invoice(store_id, xml_payload)
 

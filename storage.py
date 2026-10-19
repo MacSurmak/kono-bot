@@ -7,7 +7,7 @@ def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         
-        # 1. База знаний сопоставлений с историей и голосами
+        # 1. Product mapping consensus table with usage tracking
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS supplier_mappings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,7 +22,7 @@ def init_db():
             )
         """)
         
-        # 2. Память выбора поставщиков (для дублей ИНН вроде Форвард Трейд)
+        # 2. Preferred suppliers lookup table for disambiguating identical INNs
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS preferred_suppliers (
                 inn TEXT PRIMARY KEY,
@@ -31,7 +31,7 @@ def init_db():
             )
         """)
 
-        # 3. Статистика использования ключей Gemini API
+        # 3. Gemini API key usage telemetry table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS gemini_key_stats (
                 key_name TEXT PRIMARY KEY,

@@ -79,7 +79,7 @@ class IikoClient:
         return clean_products
 
     def upload_invoice(self, target_store_id: str, xml_payload: str):
-        # ЗАЩИТНЫЙ ПРЕДОХРАНИТЕЛЬ
+        # Safety guardrail preventing uploads to unapproved stores
         if target_store_id not in ALLOWED_STORES:
             raise PermissionError(
                 f"КРИТИЧЕСКАЯ БЛОКИРОВКА: Попытка отправить накладную на чужой склад {target_store_id}! "

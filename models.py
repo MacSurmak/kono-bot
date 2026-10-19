@@ -14,7 +14,7 @@ class RawInvoiceItem:
 @dataclass
 class RawInvoiceDocument:
     doc_number: str
-    doc_date: str  # Формат: YYYY-MM-DD
+    doc_date: str  # Format: YYYY-MM-DD
     supplier_inn: str
     supplier_name: str
     consignee_address: str

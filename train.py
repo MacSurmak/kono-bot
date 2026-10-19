@@ -25,7 +25,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
 
     print(f"[*] Сканирование {len(files)} файлов в папке '{data_dir}'...")
 
-    # 1. Считываем все файлы в память и определяем диапазон дат
+    # 1. Parse all documents into memory and calculate date boundaries
     parsed_docs = []
     valid_dates = []
 
@@ -34,7 +34,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             doc = parse_document(file_path)
             if doc and doc.items:
                 parsed_docs.append(doc)
-                # Проверяем валидность даты YYYY-MM-DD
+                # Verify ISO date formatting
                 try:
                     d_obj = datetime.strptime(doc.doc_date, "%Y-%m-%d").date()
                     valid_dates.append(d_obj)
@@ -49,12 +49,12 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
 
     print(f"[+] Успешно прочитано документов: {len(parsed_docs)} из {len(files)}")
 
-    # 2. Вычисляем динамический диапазон дат с буфером ±5 дней
+    # 2. Dynamic date range calculation with +/- 5-day boundary buffer
     if valid_dates:
         min_doc_date = min(valid_dates)
         max_doc_date = max(valid_dates)
         
-        # Сдвиг дат на 5 дней для компенсации задержек проведения
+        # Compensate for delayed manual data entry
         auto_from = (min_doc_date - timedelta(days=5)).strftime("%Y-%m-%d")
         auto_to = (max_doc_date + timedelta(days=5)).strftime("%Y-%m-%d")
         
@@ -63,19 +63,19 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         auto_from = "2026-01-01"
         auto_to = "2026-12-31"
 
-    # Приоритет флагам из командной строки, если они заданы вручную
+    # Allow CLI arguments to override detected date bounds
     date_from = override_from or auto_from
     date_to = override_to or auto_to
 
     print(f"    Запрашиваемый период iiko: {date_from} — {date_to} (автоматически с буфером)")
 
-    # 3. Загрузка живого пула номенклатуры (без архива и Яндекс.Еды)
+    # 3. Load active inventory pool excluding archive and delivery menus
     print("\n[*] Загрузка актуального каталога iiko и проверка папок...")
     active_products = client.get_active_stock_products()
     active_pool = {p["id"]: p for p in active_products}
     print(f"[+] Разрешенных активных товаров: {len(active_pool)}")
 
-    # 4. Выгрузка накладных iiko за вычисленный период
+    # 4. Fetch historical invoices from iiko for detected period
     print(f"[*] Выгрузка истории накладных из iiko...")
     inv_resp = client.get(
         "/api/documents/export/incomingInvoice",
@@ -85,7 +85,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
     iiko_docs = inv_root.findall(".//document")
     print(f"[+] Найдено накладных в iiko за этот период: {len(iiko_docs)}")
 
-    # Индексируем накладные iiko для мгновенного поиска
+    # Index iiko invoices for O(1) matching
     iiko_by_num = {}
     iiko_by_sum = {}
 
@@ -99,7 +99,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         if doc_sum > 0:
             iiko_by_sum.setdefault(doc_sum, []).append(d)
 
-    # 5. Сопоставление (строгий порядок + сверка цен + проверка папок)
+    # 5. Execute strict sequential matching
     print("\n[*] Анализ сопоставлений...")
     perfect_matches = 0
     learned_items = 0
@@ -108,7 +108,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         target_num = doc.doc_number
         target_sum = round(sum(it.sum for it in doc.items), 2)
 
-        # Поиск документа в iiko: по номеру или уникальной сумме
+        # Match invoice in iiko by incoming number or unique sum
         matched_iiko_doc = iiko_by_num.get(target_num)
         if matched_iiko_doc is None and target_sum in iiko_by_sum:
             candidates = iiko_by_sum[target_sum]
@@ -140,7 +140,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
 
             p_id = i_item.findtext("product")
             
-            # Проверка, что товар живой
+            # Ensure target product is currently active
             if p_id not in active_pool:
                 is_order_perfect = False
                 break
