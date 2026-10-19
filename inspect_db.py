@@ -75,6 +75,17 @@ def inspect(search_query: str = ""):
             print(f"{votes:<8} | {raw:<40} | {iiko[:35]:<35}")
     print("=" * 88)
 
+    # 4. Статистика использования ключей Gemini
+    from storage import get_all_gemini_key_stats
+    gemini_stats = get_all_gemini_key_stats()
+    if gemini_stats:
+        print("\n🔑 СТАТИСТИКА РОТАЦИИ КЛЮЧЕЙ GEMINI API:")
+        print(f"{'АККАУНТ':<20} | {'ВСЕГО':<8} | {'УСПЕХ':<8} | {'429 ЛИМИТ':<10} | {'ПОСЛЕДНИЙ ЗАПРОС'}")
+        print("-" * 75)
+        for g_row in gemini_stats:
+            print(f"{g_row[0]:<20} | {g_row[1]:<8} | {g_row[2]:<8} | {g_row[3]:<10} | {g_row[4]}")
+        print("=" * 75)
+
 if __name__ == "__main__":
     query = sys.argv[1] if len(sys.argv) > 1 else ""
     inspect(query)

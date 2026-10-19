@@ -1,18 +1,14 @@
 import xml.etree.ElementTree as ET
 from rapidfuzz import process, fuzz
 from models import RawInvoiceDocument
-from iiko_client import client, ALLOWED_STORES
+from config import ALLOWED_STORES, STORE_KEYWORDS
+from iiko_client import client
 from storage import (
     record_mapping_vote,
     get_consensus_mapping,
     get_preferred_supplier,
     save_preferred_supplier
 )
-
-STORE_KEYWORDS = {
-    "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac": ["аэропорт", "ленинградский", "ленинградка", "д. 62", "дом 62"],
-    "62b795dd-f0e2-4d3b-b354-5ff194b8dcd9": ["октябрьская", "серпуховская", "замоскворечье", "8/7", "большая серпуховская"]
-}
 
 def resolve_store(consignee_address: str) -> tuple[str, str]:
     addr = (consignee_address or "").lower()
@@ -27,11 +23,13 @@ def resolve_store(consignee_address: str) -> tuple[str, str]:
     print("    [2] Октябрьская (Большая Серпуховская, 8/7)")
     print("!" * 65)
 
-    choices = {"1": "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac", "2": "62b795dd-f0e2-4d3b-b354-5ff194b8dcd9"}
+    store_ids = list(ALLOWED_STORES.keys())
+    choice_map = {str(idx): s_id for idx, s_id in enumerate(store_ids, 1)}
+
     while True:
-        c = input("    Ваш выбор (1 или 2): ").strip()
-        if c in choices:
-            s_id = choices[c]
+        c = input(f"    Ваш выбор (1-{len(store_ids)}): ").strip()
+        if c in choice_map:
+            s_id = choice_map[c]
             return s_id, ALLOWED_STORES[s_id]
 
 def resolve_supplier(inn: str, store_name: str) -> tuple[str, str]:

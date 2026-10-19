@@ -30,6 +30,17 @@ def init_db():
                 supplier_name TEXT NOT NULL
             )
         """)
+
+        # 3. Статистика использования ключей Gemini API
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS gemini_key_stats (
+                key_name TEXT PRIMARY KEY,
+                total_requests INTEGER DEFAULT 0,
+                successful_requests INTEGER DEFAULT 0,
+                rate_limit_hits INTEGER DEFAULT 0,
+                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
 
 def record_mapping_vote(supplier_id: str, raw_name: str, product_id: str, iiko_name: str, article: str = "", weight: int = 1):
@@ -83,6 +94,43 @@ def get_preferred_supplier(inn: str) -> Optional[Tuple[str, str]]:
         cur = conn.cursor()
         cur.execute("SELECT supplier_id, supplier_name FROM preferred_suppliers WHERE inn = ?", (inn,))
         return cur.fetchone()
+
+def record_gemini_key_stat(key_name: str, success: bool, is_rate_limit: bool = False):
+    """Records key usage metrics transactionally."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT INTO gemini_key_stats (key_name, total_requests, successful_requests, rate_limit_hits, last_used_at)
+            VALUES (?, 1, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key_name) DO UPDATE SET
+                total_requests = total_requests + 1,
+                successful_requests = successful_requests + ?,
+                rate_limit_hits = rate_limit_hits + ?,
+                last_used_at = CURRENT_TIMESTAMP
+        """, (
+            key_name,
+            1 if success else 0,
+            1 if is_rate_limit else 0,
+            1 if success else 0,
+            1 if is_rate_limit else 0
+        ))
+
+def get_gemini_key_usage_counts() -> Dict[str, int]:
+    """Returns mapping of key_name to total number of requests."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT key_name, total_requests FROM gemini_key_stats")
+        return dict(cur.fetchall())
+
+def get_all_gemini_key_stats() -> List[Tuple[str, int, int, int, str]]:
+    """Returns full reporting metrics for all tracked API keys."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT key_name, total_requests, successful_requests, rate_limit_hits, last_used_at
+            FROM gemini_key_stats
+            ORDER BY total_requests DESC
+        """)
+        return cur.fetchall()
 
 if __name__ == "__main__":
     init_db()

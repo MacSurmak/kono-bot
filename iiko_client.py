@@ -2,20 +2,12 @@ import os
 import hashlib
 import requests
 import xml.etree.ElementTree as ET
-from config import cfg
+from config import cfg, ALLOWED_STORES
 
-iiko_cfg = cfg.get("iiko", {})
-BASE_URL = iiko_cfg.get("base_url").rstrip("/")
-LOGIN = iiko_cfg.get("login")
-PASSWORD = iiko_cfg.get("password")
-
-if not LOGIN or not PASSWORD:
-    raise ValueError("[-] Ошибка: в config.yaml не указан login или password для iiko!")
-
-ALLOWED_STORES = {
-    "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac": "АЭРОПОРТ",
-    "62b795dd-f0e2-4d3b-b354-5ff194b8dcd9": "ОКТЯБРЬСКАЯ"
-}
+iiko_cfg = cfg["iiko"]
+BASE_URL = iiko_cfg["base_url"].rstrip("/")
+LOGIN = iiko_cfg["login"]
+PASSWORD = iiko_cfg["password"]
 
 class IikoClient:
     def __init__(self):
