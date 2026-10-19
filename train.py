@@ -96,32 +96,14 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         if doc_sum > 0:
             iiko_by_sum.setdefault(doc_sum, []).append(d)
 
-    # 5. Multi-pass matching pipeline
-    print("\n[*] Starting Multi-Pass alignment pipeline...")
-    pass1_matched_docs = 0
-    pass2_matched_docs = 0
+    # 5. Invariant Sum-Matching Engine (Unit-of-measure agnostic)
+    print("\n[*] Starting Sum-Invariant Bipartite Alignment...")
+    from rapidfuzz import fuzz
+
+    fully_matched_invoices = 0
+    partially_matched_invoices = 0
     learned_items_count = 0
 
-    unresolved_docs = []
-
-    def extract_iiko_rows(doc_elem):
-        rows = []
-        for it in doc_elem.findall(".//items/item"):
-            p_id = it.findtext("product")
-            if p_id not in active_pool:
-                return None
-            prod = active_pool[p_id]
-            rows.append({
-                "product_id": p_id,
-                "name": prod["name"],
-                "article": prod["article"],
-                "amount": float(it.findtext("amount", 0)),
-                "sum": float(it.findtext("sum", 0))
-            })
-        return rows
-
-    # --- PASS 1: Sequential matches and 100% bijective permutations ---
-    print("\n--- [PASS 1] Exact Sequential and Bijective Permutations ---")
     for doc in parsed_docs:
         target_num = doc.doc_number
         target_sum = round(sum(it.sum for it in doc.items), 2)
@@ -136,31 +118,47 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             continue
 
         supplier_id = matched_iiko_doc.findtext("supplier")
-        iiko_rows = extract_iiko_rows(matched_iiko_doc)
-        if not iiko_rows or len(doc.items) != len(iiko_rows):
-            continue
+        raw_iiko_items = matched_iiko_doc.findall(".//items/item")
 
-        available_iiko = list(iiko_rows)
+        # Extract only active items
+        available_iiko = []
+        for it in raw_iiko_items:
+            p_id = it.findtext("product")
+            if p_id in active_pool:
+                available_iiko.append({
+                    "product_id": p_id,
+                    "name": active_pool[p_id]["name"],
+                    "article": active_pool[p_id]["article"],
+                    "sum": float(it.findtext("sum", 0))
+                })
+
         matched_pairs = []
 
+        # Find best bipartite pairing by matching line sum and maximizing text similarity
         for d_item in doc.items:
-            candidate = None
-            for idx, i_item in enumerate(available_iiko):
-                if abs(d_item.quantity - i_item["amount"]) < 0.01 and abs(d_item.sum - i_item["sum"]) < 1.0:
-                    candidate = available_iiko.pop(idx)
-                    break
+            best_idx = None
+            best_score = -1
 
-            if candidate:
+            for idx, i_item in enumerate(available_iiko):
+                # Hard invariant: line total sum with VAT must match to within 0.50 RUB
+                if abs(d_item.sum - i_item["sum"]) < 0.50:
+                    sim_score = fuzz.token_set_ratio(d_item.raw_name.lower(), i_item["name"].lower())
+                    if sim_score > best_score:
+                        best_score = sim_score
+                        best_idx = idx
+
+            if best_idx is not None:
+                chosen_iiko = available_iiko.pop(best_idx)
                 matched_pairs.append({
                     "supplier_id": supplier_id,
                     "raw_name": d_item.raw_name,
-                    "product_id": candidate["product_id"],
-                    "iiko_name": candidate["name"],
-                    "article": d_item.article or candidate["article"]
+                    "product_id": chosen_iiko["product_id"],
+                    "iiko_name": chosen_iiko["name"],
+                    "article": d_item.article or chosen_iiko["article"]
                 })
 
-        if len(matched_pairs) == len(doc.items):
-            pass1_matched_docs += 1
+        # Record mapping votes for all verified sum-matched pairs
+        if matched_pairs:
             for pair in matched_pairs:
                 record_mapping_vote(
                     supplier_id=pair["supplier_id"],
@@ -171,102 +169,21 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     weight=1
                 )
                 learned_items_count += 1
-            print(f"[✅ PASS 1 BIJECTION] {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(matched_pairs)} items)")
-        else:
-            unresolved_docs.append((doc, matched_iiko_doc, supplier_id, iiko_rows))
 
-    # --- PASS 2: Anchor resolution with prior knowledge and elimination ---
-    print(f"\n--- [PASS 2] Anchor Resolution & Deductive Elimination ({len(unresolved_docs)} candidates) ---")
-    from storage import get_consensus_mapping
+            if len(matched_pairs) == len(doc.items):
+                fully_matched_invoices += 1
+                print(f"[✅ FULL MATCH] {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(matched_pairs)} of {len(doc.items)} lines)")
+            else:
+                partially_matched_invoices += 1
+                print(f"[🔹 PARTIAL]    {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(matched_pairs)} of {len(doc.items)} lines)")
 
-    for doc, matched_iiko_doc, supplier_id, iiko_rows in unresolved_docs:
-        target_num = doc.doc_number
-        target_sum = round(sum(it.sum for it in doc.items), 2)
-
-        available_iiko = list(iiko_rows)
-        remaining_doc_items = list(doc.items)
-        resolved_pairs = []
-
-        # Step 2.1: Anchor by previously learned consensus mappings
-        for d_item in list(remaining_doc_items):
-            consensus = get_consensus_mapping(supplier_id, d_item.raw_name)
-            if consensus and not consensus["has_conflict"]:
-                known_pid = consensus["product_id"]
-                match_idx = None
-                for idx, i_item in enumerate(available_iiko):
-                    if i_item["product_id"] == known_pid:
-                        qty_ok = abs(d_item.quantity - i_item["amount"]) < 0.01
-                        sum_ok = abs(d_item.sum - i_item["sum"]) < 1.0
-                        if qty_ok and sum_ok:
-                            match_idx = idx
-                            break
-                if match_idx is not None:
-                    matched_iiko_row = available_iiko.pop(match_idx)
-                    remaining_doc_items.remove(d_item)
-                    resolved_pairs.append({
-                        "supplier_id": supplier_id,
-                        "raw_name": d_item.raw_name,
-                        "product_id": matched_iiko_row["product_id"],
-                        "iiko_name": matched_iiko_row["name"],
-                        "article": d_item.article or matched_iiko_row["article"]
-                    })
-
-        # Step 2.2: Greedy match for remaining lines with unique (quantity, sum)
-        for d_item in list(remaining_doc_items):
-            matching_candidates = [
-                (idx, i_item) for idx, i_item in enumerate(available_iiko)
-                if abs(d_item.quantity - i_item["amount"]) < 0.01 and abs(d_item.sum - i_item["sum"]) < 1.0
-            ]
-            if len(matching_candidates) == 1:
-                idx, candidate = matching_candidates[0]
-                available_iiko.pop(idx)
-                remaining_doc_items.remove(d_item)
-                resolved_pairs.append({
-                    "supplier_id": supplier_id,
-                    "raw_name": d_item.raw_name,
-                    "product_id": candidate["product_id"],
-                    "iiko_name": candidate["name"],
-                    "article": d_item.article or candidate["article"]
-                })
-
-        # Step 2.3: Final elimination if exactly 1 pair remains with matching sum
-        if len(remaining_doc_items) == 1 and len(available_iiko) == 1:
-            last_d = remaining_doc_items[0]
-            last_i = available_iiko[0]
-            if abs(last_d.quantity - last_i["amount"]) < 0.01 and abs(last_d.sum - last_i["sum"]) < 1.0:
-                remaining_doc_items.clear()
-                available_iiko.clear()
-                resolved_pairs.append({
-                    "supplier_id": supplier_id,
-                    "raw_name": last_d.raw_name,
-                    "product_id": last_i["product_id"],
-                    "iiko_name": last_i["name"],
-                    "article": last_d.article or last_i["article"]
-                })
-
-        # If all items resolved in Pass 2
-        if len(resolved_pairs) == len(doc.items):
-            pass2_matched_docs += 1
-            for pair in resolved_pairs:
-                record_mapping_vote(
-                    supplier_id=pair["supplier_id"],
-                    raw_name=pair["raw_name"],
-                    product_id=pair["product_id"],
-                    iiko_name=pair["iiko_name"],
-                    article=pair["article"],
-                    weight=1
-                )
-                learned_items_count += 1
-            print(f"[🎯 PASS 2 ANCHORED]  {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} (Resolved {len(resolved_pairs)} items)")
-
-    total_invoices_matched = pass1_matched_docs + pass2_matched_docs
     print("\n" + "=" * 70)
-    print(f"📊 [MULTI-PASS TRAINING SUMMARY]")
-    print(f"  Total documents processed:          {len(parsed_docs)}")
-    print(f"  Matched in Pass 1 (Bijections):    {pass1_matched_docs}")
-    print(f"  Matched in Pass 2 (Anchors):       {pass2_matched_docs}")
-    print(f"  TOTAL INVOICES MATCHED:            {total_invoices_matched} of {len(parsed_docs)}")
-    print(f"  VERIFIED MAPPINGS IN DB:           {learned_items_count}")
+    print("📊 [TRAINING SUMMARY: SUM INVARIANT ALIGNMENT]")
+    print(f"  Processed documents:                {len(parsed_docs)}")
+    print(f"  Fully matched invoices (100% lines): {fully_matched_invoices}")
+    print(f"  Partially matched invoices:          {partially_matched_invoices}")
+    print(f"  TOTAL INVOICES UTILIZED:             {fully_matched_invoices + partially_matched_invoices} of {len(parsed_docs)}")
+    print(f"  TOTAL VERIFIED MAPPINGS IN DB:       {learned_items_count}")
     print("=" * 70)
 
 def main():
