@@ -1,0 +1,14 @@
+.env
+*.db
+cookies.txt
+__pycache__/
+config.yaml
+
+# AI DevTool workdir
+.ai/
+
+sample_xmls/
+sample_pdfs/
+diadoc_xmls/
+dry_run_preview.xml
+iiko_matcher.db
