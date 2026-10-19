@@ -12,3 +12,5 @@ sample_pdfs/
 diadoc_xmls/
 dry_run_preview.xml
 iiko_matcher.db
+
+unmatched_diagnosis.json
