@@ -27,10 +27,13 @@ async def process_create_invite(callback: types.CallbackQuery):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
 
+    from loguru import logger
+
     bot_info = await callback.bot.get_me()
     token = create_invite_token(created_by=callback.from_user.id)
     invite_url = f"https://t.me/{bot_info.username}?start=inv_{token}"
 
+    logger.info(f"Admin {callback.from_user.id} generated a new invite token: {token}")
     await callback.message.answer(t("admin_invite_created", invite_url=invite_url), parse_mode="HTML")
 
 

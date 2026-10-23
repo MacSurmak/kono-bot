@@ -53,7 +53,10 @@ async def handle_document_upload(message: types.Message):
     doc_id = str(uuid.uuid4())[:8]
     temp_path = os.path.join(TMP_DIR, f"{doc_id}_{filename}")
 
+    from loguru import logger
+
     try:
+        logger.info(f"Incoming document from user {message.from_user.id} ({message.from_user.full_name}): '{filename}'")
         await message.bot.download(doc.file_id, destination=temp_path)
         parsed_doc = parse_document(temp_path)
 
@@ -61,6 +64,7 @@ async def handle_document_upload(message: types.Message):
             raise ValueError("Документ не содержит товарных позиций или поврежден.")
 
         total_sum = sum(it.sum for it in parsed_doc.items)
+        logger.info(f"Document parsed successfully: Doc #{parsed_doc.doc_number}, supplier='{parsed_doc.supplier_name}', items={len(parsed_doc.items)}, total={total_sum:.2f} RUB")
 
         sessions[doc_id] = {
             "parsed_doc": parsed_doc,
@@ -106,9 +110,12 @@ async def process_store_selection(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
+    from loguru import logger
+
     session["store_id"] = store_id
     session["store_name"] = ALLOWED_STORES[store_id]
     parsed_doc = session["parsed_doc"]
+    logger.info(f"Store selected for Doc #{parsed_doc.doc_number}: '{session['store_name']}' ({store_id})")
 
     # 1. Resolve Supplier
     pref = get_preferred_supplier(parsed_doc.supplier_inn)
@@ -266,6 +273,8 @@ async def process_manual_match(callback: types.CallbackQuery):
 
     catalog = client.get_active_stock_products()
     prod = next((p for p in catalog if p["id"] == prod_id), None)
+    from loguru import logger
+
     if prod:
         record_mapping_vote(
             supplier_id=session["supplier_id"],
@@ -275,6 +284,7 @@ async def process_manual_match(callback: types.CallbackQuery):
             article=item.article or prod["article"],
             weight=2
         )
+        logger.info(f"Recorded manual mapping vote: '{item.raw_name}' -> '{prod['name']}' (supplier_id={session['supplier_id']})")
         session["matched_items"].append({
             "num": item_idx,
             "product_id": prod["id"],
@@ -354,8 +364,11 @@ async def process_draft_upload(callback: types.CallbackQuery):
         resp = client.upload_invoice(session["store_id"], xml_payload)
         import xml.etree.ElementTree as ET
 
+        from loguru import logger
+
         if resp.status_code == 200 and "valid>true" in resp.text:
             iiko_doc_num = ET.fromstring(resp.content).findtext("documentNumber") or "Создан"
+            logger.info(f"Draft invoice created in iiko: #{iiko_doc_num} (incoming: #{session['parsed_doc'].doc_number}) for store '{session['store_name']}'")
             await callback.message.edit_text(
                 t(
                     "invoice_draft_success",
@@ -365,9 +378,12 @@ async def process_draft_upload(callback: types.CallbackQuery):
                 )
             )
         else:
+            logger.error(f"iiko upload rejected: {resp.status_code} - {resp.text[:300]}")
             await callback.message.edit_text(t("invoice_upload_failed", error=resp.text[:300]))
 
     except Exception as e:
+        from loguru import logger
+        logger.exception(f"Unexpected error while uploading invoice to iiko: {e}")
         await callback.message.edit_text(t("invoice_upload_failed", error=str(e)))
     finally:
         cleanup_session(doc_id)

@@ -41,8 +41,13 @@ class AuthMiddleware(BaseMiddleware):
             data["user_role"] = db_user["role"]
             return await handler(event, data)
 
-        # Reject unauthorized access loudly using centralized lexicon
+        # Reject unauthorized access loudly and record audit log
+        from loguru import logger
         from lexicon import t
+
+        logger.warning(
+            f"Unauthorized access blocked: user_id={user.id}, username=@{user.username}, full_name='{user.full_name}'"
+        )
 
         if isinstance(event, Message):
             await event.answer(t("auth_access_denied_msg"), parse_mode="HTML")

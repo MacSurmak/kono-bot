@@ -1,24 +1,20 @@
 import asyncio
-import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from loguru import logger
 
 from config import cfg
 from storage import init_db
 from middlewares.auth import AuthMiddleware
 from handlers import main_router
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-logger = logging.getLogger("iiko_bot")
+from services.logger import setup_logger
 
 
 async def main():
     """Initializes and runs the supply Telegram bot in polling mode."""
-    logger.info("Initializing database schema and state...")
+    setup_logger("INFO")
+    logger.info("Initializing database schema and persistent storage...")
     init_db()
 
     bot_token = cfg["telegram"]["bot_token"]

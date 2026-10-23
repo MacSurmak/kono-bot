@@ -20,14 +20,18 @@ async def handle_start(message: types.Message):
             username=user.username,
             full_name=user.full_name,
         )
+        from loguru import logger
         from lexicon import t
         if success:
+            logger.info(f"Invite token successfully activated by user_id={user.id} (@{user.username}, {user.full_name})")
             await message.answer(t("start_welcome_invite", name=user.first_name), parse_mode="HTML")
             return
         else:
+            logger.warning(f"Invalid or expired invite token attempt by user_id={user.id} (@{user.username}): token='{token}'")
             await message.answer(t("start_invite_invalid"), parse_mode="HTML")
             return
 
+    from loguru import logger
     from lexicon import t
     db_user = get_bot_user(user.id)
     if db_user and db_user["is_active"]:
