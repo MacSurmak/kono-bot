@@ -7,11 +7,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(BASE_DIR, "data", "state")
 DB_PATH = os.path.join(STATE_DIR, "iiko_matcher.db")
 
+
 def init_db():
     os.makedirs(STATE_DIR, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        
+
         # 1. Product mapping consensus table with usage tracking
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS supplier_mappings (
@@ -26,7 +27,7 @@ def init_db():
                 UNIQUE(supplier_id, raw_name, product_id)
             )
         """)
-        
+
         # 2. Preferred suppliers lookup table for disambiguating identical INNs
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS preferred_suppliers (
@@ -48,9 +49,18 @@ def init_db():
         """)
         conn.commit()
 
-def record_mapping_vote(supplier_id: str, raw_name: str, product_id: str, iiko_name: str, article: str = "", weight: int = 1):
+
+def record_mapping_vote(
+    supplier_id: str,
+    raw_name: str,
+    product_id: str,
+    iiko_name: str,
+    article: str = "",
+    weight: int = 1,
+):
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO supplier_mappings 
             (supplier_id, raw_name, product_id, iiko_name, iiko_article, usage_count, last_used_at)
             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -58,17 +68,31 @@ def record_mapping_vote(supplier_id: str, raw_name: str, product_id: str, iiko_n
             DO UPDATE SET 
                 usage_count = usage_count + ?,
                 last_used_at = CURRENT_TIMESTAMP
-        """, (supplier_id, raw_name.strip(), product_id, iiko_name, article, weight, weight))
+        """,
+            (
+                supplier_id,
+                raw_name.strip(),
+                product_id,
+                iiko_name,
+                article,
+                weight,
+                weight,
+            ),
+        )
+
 
 def get_consensus_mapping(supplier_id: str, raw_name: str) -> Optional[Dict[str, Any]]:
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT product_id, iiko_name, iiko_article, usage_count
             FROM supplier_mappings
             WHERE supplier_id = ? AND raw_name = ?
             ORDER BY usage_count DESC, last_used_at DESC
-        """, (supplier_id, raw_name.strip()))
+        """,
+            (supplier_id, raw_name.strip()),
+        )
         rows = cur.fetchall()
 
         if not rows:
@@ -86,24 +110,33 @@ def get_consensus_mapping(supplier_id: str, raw_name: str) -> Optional[Dict[str,
             "total_votes": total_votes,
             "confidence": confidence,
             "has_conflict": len(rows) > 1 and confidence < 0.75,
-            "all_variants": rows
+            "all_variants": rows,
         }
+
 
 def save_preferred_supplier(inn: str, supplier_id: str, supplier_name: str):
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("INSERT OR REPLACE INTO preferred_suppliers (inn, supplier_id, supplier_name) VALUES (?, ?, ?)",
-                     (inn, supplier_id, supplier_name))
+        conn.execute(
+            "INSERT OR REPLACE INTO preferred_suppliers (inn, supplier_id, supplier_name) VALUES (?, ?, ?)",
+            (inn, supplier_id, supplier_name),
+        )
+
 
 def get_preferred_supplier(inn: str) -> Optional[Tuple[str, str]]:
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT supplier_id, supplier_name FROM preferred_suppliers WHERE inn = ?", (inn,))
+        cur.execute(
+            "SELECT supplier_id, supplier_name FROM preferred_suppliers WHERE inn = ?",
+            (inn,),
+        )
         return cur.fetchone()
+
 
 def record_gemini_key_stat(key_name: str, success: bool, is_rate_limit: bool = False):
     """Records key usage metrics transactionally."""
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO gemini_key_stats (key_name, total_requests, successful_requests, rate_limit_hits, last_used_at)
             VALUES (?, 1, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(key_name) DO UPDATE SET
@@ -111,13 +144,16 @@ def record_gemini_key_stat(key_name: str, success: bool, is_rate_limit: bool = F
                 successful_requests = successful_requests + ?,
                 rate_limit_hits = rate_limit_hits + ?,
                 last_used_at = CURRENT_TIMESTAMP
-        """, (
-            key_name,
-            1 if success else 0,
-            1 if is_rate_limit else 0,
-            1 if success else 0,
-            1 if is_rate_limit else 0
-        ))
+        """,
+            (
+                key_name,
+                1 if success else 0,
+                1 if is_rate_limit else 0,
+                1 if success else 0,
+                1 if is_rate_limit else 0,
+            ),
+        )
+
 
 def get_gemini_key_usage_counts() -> Dict[str, int]:
     """Returns mapping of key_name to total number of requests."""
@@ -125,6 +161,7 @@ def get_gemini_key_usage_counts() -> Dict[str, int]:
         cur = conn.cursor()
         cur.execute("SELECT key_name, total_requests FROM gemini_key_stats")
         return dict(cur.fetchall())
+
 
 def get_all_gemini_key_stats() -> List[Tuple[str, int, int, int, str]]:
     """Returns full reporting metrics for all tracked API keys."""
@@ -136,6 +173,7 @@ def get_all_gemini_key_stats() -> List[Tuple[str, int, int, int, str]]:
             ORDER BY total_requests DESC
         """)
         return cur.fetchall()
+
 
 if __name__ == "__main__":
     init_db()

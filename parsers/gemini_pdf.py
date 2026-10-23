@@ -2,6 +2,7 @@ import base64
 from models import RawInvoiceDocument, RawInvoiceItem, InvoiceDocumentSchema
 from gemini_rotator import rotator
 
+
 def parse_pdf_gemini(file_path: str) -> RawInvoiceDocument:
     with open(file_path, "rb") as f:
         pdf_b64 = base64.b64encode(f.read()).decode("utf-8")
@@ -13,11 +14,13 @@ def parse_pdf_gemini(file_path: str) -> RawInvoiceDocument:
 
     input_payload = [
         {"type": "document", "data": pdf_b64, "mime_type": "application/pdf"},
-        {"type": "text", "text": prompt}
+        {"type": "text", "text": prompt},
     ]
 
     # Execute with Pydantic Structured Output constraint
-    raw_response = rotator.execute_interaction(input_payload, schema=InvoiceDocumentSchema)
+    raw_response = rotator.execute_interaction(
+        input_payload, schema=InvoiceDocumentSchema
+    )
     validated_doc = InvoiceDocumentSchema.model_validate_json(raw_response)
 
     items = [
@@ -28,7 +31,7 @@ def parse_pdf_gemini(file_path: str) -> RawInvoiceDocument:
             quantity=it.quantity,
             price=it.price,
             sum=it.sum,
-            vat_rate=it.vat_rate
+            vat_rate=it.vat_rate,
         )
         for it in validated_doc.items
     ]
@@ -40,5 +43,5 @@ def parse_pdf_gemini(file_path: str) -> RawInvoiceDocument:
         supplier_name=validated_doc.supplier_name.strip(),
         consignee_address=validated_doc.consignee_address.strip(),
         items=items,
-        source_file=file_path
+        source_file=file_path,
     )

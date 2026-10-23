@@ -9,6 +9,7 @@ BASE_URL = iiko_cfg["base_url"].rstrip("/")
 LOGIN = iiko_cfg["login"]
 PASSWORD = iiko_cfg["password"]
 
+
 class IikoClient:
     def __init__(self):
         self.session = requests.Session()
@@ -17,11 +18,17 @@ class IikoClient:
 
     def _auth(self):
         pass_hash = hashlib.sha1(PASSWORD.encode("utf-8")).hexdigest()
-        resp = self.session.get(f"{self.base_url}/api/auth", params={"login": LOGIN, "pass": pass_hash})
+        resp = self.session.get(
+            f"{self.base_url}/api/auth", params={"login": LOGIN, "pass": pass_hash}
+        )
         if resp.status_code != 200:
-            resp = self.session.get(f"{self.base_url}/api/auth", params={"login": LOGIN, "pass": PASSWORD})
+            resp = self.session.get(
+                f"{self.base_url}/api/auth", params={"login": LOGIN, "pass": PASSWORD}
+            )
         if resp.status_code != 200:
-            raise ConnectionError(f"iiko authorization failed: {resp.status_code} - {resp.text}")
+            raise ConnectionError(
+                f"iiko authorization failed: {resp.status_code} - {resp.text}"
+            )
         self.session.params = {"key": resp.text.strip()}
 
     def get(self, endpoint: str, **kwargs):
@@ -39,19 +46,23 @@ class IikoClient:
             is_supplier = emp.findtext("supplier", "false") == "true"
             is_deleted = emp.findtext("deleted", "false") == "true"
             if inn and is_supplier and not is_deleted:
-                suppliers.setdefault(inn, []).append({
-                    "id": emp.findtext("id"),
-                    "name": (emp.findtext("name") or "").strip(),
-                    "code": (emp.findtext("code") or "").strip(),
-                    "dept_codes": (emp.findtext("departmentCodes") or "").strip()
-                })
+                suppliers.setdefault(inn, []).append(
+                    {
+                        "id": emp.findtext("id"),
+                        "name": (emp.findtext("name") or "").strip(),
+                        "code": (emp.findtext("code") or "").strip(),
+                        "dept_codes": (emp.findtext("departmentCodes") or "").strip(),
+                    }
+                )
         return suppliers
 
     def get_active_stock_products(self) -> list:
         resp = self.get("/api/products")
         root = ET.fromstring(resp.content)
         all_elements = root.findall(".//productDto")
-        id_to_name = {p.findtext("id"): p.findtext("name", "").strip() for p in all_elements}
+        id_to_name = {
+            p.findtext("id"): p.findtext("name", "").strip() for p in all_elements
+        }
 
         clean_products = []
         for p in all_elements:
@@ -64,18 +75,27 @@ class IikoClient:
             parent_id = p.findtext("parentId")
             folder_name = id_to_name.get(parent_id, "Корень")
 
-            if "архив" in folder_name.lower() or name.lower().startswith("архив.") or "архив" in cat.lower():
+            if (
+                "архив" in folder_name.lower()
+                or name.lower().startswith("архив.")
+                or "архив" in cat.lower()
+            ):
                 continue
-            if any(k in folder_name.lower() for k in ["агрегаторы яе", "яе мск", "яе калининград"]):
+            if any(
+                k in folder_name.lower()
+                for k in ["агрегаторы яе", "яе мск", "яе калининград"]
+            ):
                 continue
 
-            clean_products.append({
-                "id": p.findtext("id"),
-                "name": name,
-                "article": p.findtext("num", "") or p.findtext("code", ""),
-                "category": cat,
-                "folder": folder_name
-            })
+            clean_products.append(
+                {
+                    "id": p.findtext("id"),
+                    "name": name,
+                    "article": p.findtext("num", "") or p.findtext("code", ""),
+                    "category": cat,
+                    "folder": folder_name,
+                }
+            )
         return clean_products
 
     def upload_invoice(self, target_store_id: str, xml_payload: str):
@@ -90,7 +110,8 @@ class IikoClient:
         return self.post(
             "/api/documents/import/incomingInvoice",
             data=xml_payload.encode("utf-8"),
-            headers=headers
+            headers=headers,
         )
+
 
 client = IikoClient()

@@ -7,8 +7,9 @@ from storage import (
     record_mapping_vote,
     get_consensus_mapping,
     get_preferred_supplier,
-    save_preferred_supplier
+    save_preferred_supplier,
 )
+
 
 def resolve_store(consignee_address: str) -> tuple[str, str]:
     addr = (consignee_address or "").lower()
@@ -32,6 +33,7 @@ def resolve_store(consignee_address: str) -> tuple[str, str]:
             s_id = choice_map[c]
             return s_id, ALLOWED_STORES[s_id]
 
+
 def resolve_supplier(inn: str, store_name: str) -> tuple[str, str]:
     pref = get_preferred_supplier(inn)
     if pref:
@@ -46,9 +48,15 @@ def resolve_supplier(inn: str, store_name: str) -> tuple[str, str]:
         return candidates[0]["id"], candidates[0]["name"]
 
     print("\n" + "!" * 65)
-    print(f"[?] Multiple supplier entries found for INN {inn} (target store: {store_name}):")
+    print(
+        f"[?] Multiple supplier entries found for INN {inn} (target store: {store_name}):"
+    )
     for idx, c in enumerate(candidates, 1):
-        dep = f" (departments: {c['dept_codes']})" if c['dept_codes'] else " (all departments)"
+        dep = (
+            f" (departments: {c['dept_codes']})"
+            if c["dept_codes"]
+            else " (all departments)"
+        )
         print(f"    [{idx}] {c['name']}{dep}")
     print("!" * 65)
 
@@ -59,7 +67,10 @@ def resolve_supplier(inn: str, store_name: str) -> tuple[str, str]:
             save_preferred_supplier(inn, chosen["id"], chosen["name"])
             return chosen["id"], chosen["name"]
 
-def resolve_item(supplier_id: str, raw_name: str, article: str, catalog: list) -> tuple[str, str]:
+
+def resolve_item(
+    supplier_id: str, raw_name: str, article: str, catalog: list
+) -> tuple[str, str]:
     consensus = get_consensus_mapping(supplier_id, raw_name)
     if consensus and not consensus["has_conflict"]:
         return consensus["product_id"], consensus["iiko_name"]
@@ -68,12 +79,16 @@ def resolve_item(supplier_id: str, raw_name: str, article: str, catalog: list) -
         print(f"\n[⚠️ HISTORICAL CONFLICT] Item: '{raw_name}'")
         for idx, var in enumerate(consensus["all_variants"], 1):
             pct = (var[3] / consensus["total_votes"]) * 100
-            print(f"    [{idx}] {var[1]} (sku: {var[2]}) — selected {var[3]} times ({pct:.0f}%)")
+            print(
+                f"    [{idx}] {var[1]} (sku: {var[2]}) — selected {var[3]} times ({pct:.0f}%)"
+            )
         print("    [0] Search catalog manually")
         c = input("    Select correct variant: ").strip()
         if c.isdigit() and 1 <= int(c) <= len(consensus["all_variants"]):
             chosen = consensus["all_variants"][int(c) - 1]
-            record_mapping_vote(supplier_id, raw_name, chosen[0], chosen[1], chosen[2], weight=3)
+            record_mapping_vote(
+                supplier_id, raw_name, chosen[0], chosen[1], chosen[2], weight=3
+            )
             return chosen[0], chosen[1]
 
     print(f"\n[?] NEW ITEM: '{raw_name}'" + (f" (sku: {article})" if article else ""))
@@ -84,7 +99,9 @@ def resolve_item(supplier_id: str, raw_name: str, article: str, catalog: list) -
     print("    iiko catalog candidates:")
     for idx, (name, score, _) in enumerate(matches, 1):
         p = name_to_prod[name]
-        print(f"    [{idx}] {name} (sku: {p['article']}) [Folder: {p['folder']}] ({score:.0f}%)")
+        print(
+            f"    [{idx}] {name} (sku: {p['article']}) [Folder: {p['folder']}] ({score:.0f}%)"
+        )
     print("    [4] Enter iiko SKU manually")
     print("    [0] Skip item")
 
@@ -93,19 +110,31 @@ def resolve_item(supplier_id: str, raw_name: str, article: str, catalog: list) -
         if ans in ("1", "2", "3"):
             chosen_name = matches[int(ans) - 1][0]
             prod = name_to_prod[chosen_name]
-            record_mapping_vote(supplier_id, raw_name, prod["id"], prod["name"], article or prod["article"], weight=2)
+            record_mapping_vote(
+                supplier_id,
+                raw_name,
+                prod["id"],
+                prod["name"],
+                article or prod["article"],
+                weight=2,
+            )
             return prod["id"], prod["name"]
         elif ans == "4":
             manual = input("    Enter iiko SKU: ").strip()
             for p in catalog:
                 if manual in (p["article"], p["id"]):
-                    record_mapping_vote(supplier_id, raw_name, p["id"], p["name"], manual, weight=2)
+                    record_mapping_vote(
+                        supplier_id, raw_name, p["id"], p["name"], manual, weight=2
+                    )
                     return p["id"], p["name"]
             print("    SKU not found.")
         elif ans == "0":
             return None, None
 
-def build_iiko_xml(doc: RawInvoiceDocument, store_id: str, supplier_id: str, matched_items: list) -> str:
+
+def build_iiko_xml(
+    doc: RawInvoiceDocument, store_id: str, supplier_id: str, matched_items: list
+) -> str:
     items_xml = "".join([f"""
         <item>
             <num>{it['num']}</num>

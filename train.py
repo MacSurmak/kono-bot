@@ -11,14 +11,19 @@ from storage import init_db, record_mapping_vote
 
 init_db()
 
+
 def train(data_dir: str, override_from: str = None, override_to: str = None):
     if not os.path.exists(data_dir):
         print(f"[-] Directory '{data_dir}' not found!")
         sys.exit(1)
 
     supported_exts = (".xml", ".pdf")
-    files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.lower().endswith(supported_exts)]
-    
+    files = [
+        os.path.join(data_dir, f)
+        for f in os.listdir(data_dir)
+        if f.lower().endswith(supported_exts)
+    ]
+
     if not files:
         print(f"[-] No supported files (.xml, .pdf) found in '{data_dir}'!")
         return
@@ -52,10 +57,10 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
     if valid_dates:
         min_doc_date = min(valid_dates)
         max_doc_date = max(valid_dates)
-        
+
         auto_from = (min_doc_date - timedelta(days=5)).strftime("%Y-%m-%d")
         auto_to = (max_doc_date + timedelta(days=5)).strftime("%Y-%m-%d")
-        
+
         print(f"    Document date span: from {min_doc_date} to {max_doc_date}")
     else:
         auto_from = "2026-01-01"
@@ -70,13 +75,15 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
     print("\n[*] Loading active catalog and verifying folders...")
     active_products = client.get_active_stock_products()
     active_pool = {p["id"]: p for p in active_products}
-    print(f"[+] Active inventory pool: {len(active_pool)} (archive and delivery excluded)")
+    print(
+        f"[+] Active inventory pool: {len(active_pool)} (archive and delivery excluded)"
+    )
 
     # 4. Fetch historical invoices from iiko for detected period
     print(f"[*] Querying historical invoices from iiko...")
     inv_resp = client.get(
         "/api/documents/export/incomingInvoice",
-        params={"from": date_from, "to": date_to}
+        params={"from": date_from, "to": date_to},
     )
     inv_root = ET.fromstring(inv_resp.content)
     iiko_docs = inv_root.findall(".//document")
@@ -90,7 +97,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         inc_num = (d.findtext("incomingDocumentNumber") or "").strip()
         items = d.findall(".//items/item")
         doc_sum = round(sum(float(it.findtext("sum", 0)) for it in items), 2)
-        
+
         if inc_num:
             iiko_by_num[inc_num] = d
         if doc_sum > 0:
@@ -128,13 +135,15 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             if p_id not in active_pool:
                 has_inactive = True
                 break
-            iiko_items.append({
-                "product_id": p_id,
-                "name": active_pool[p_id]["name"],
-                "article": active_pool[p_id]["article"],
-                "amount": float(it.findtext("amount", 0)),
-                "sum": round(float(it.findtext("sum", 0)), 2)
-            })
+            iiko_items.append(
+                {
+                    "product_id": p_id,
+                    "name": active_pool[p_id]["name"],
+                    "article": active_pool[p_id]["article"],
+                    "amount": float(it.findtext("amount", 0)),
+                    "sum": round(float(it.findtext("sum", 0)), 2),
+                }
+            )
 
         if has_inactive or not iiko_items:
             continue
@@ -149,13 +158,15 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                 if abs(d_sum - i_item["sum"]) >= 0.50:
                     is_sequential = False
                     break
-                temp_seq.append({
-                    "supplier_id": supplier_id,
-                    "raw_name": d_item.raw_name,
-                    "product_id": i_item["product_id"],
-                    "iiko_name": i_item["name"],
-                    "article": d_item.article or i_item["article"]
-                })
+                temp_seq.append(
+                    {
+                        "supplier_id": supplier_id,
+                        "raw_name": d_item.raw_name,
+                        "product_id": i_item["product_id"],
+                        "iiko_name": i_item["name"],
+                        "article": d_item.article or i_item["article"],
+                    }
+                )
 
             if is_sequential:
                 sequential_invoices += 1
@@ -166,10 +177,12 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                         product_id=pair["product_id"],
                         iiko_name=pair["iiko_name"],
                         article=pair["article"],
-                        weight=1
+                        weight=1,
                     )
                     learned_items_count += 1
-                print(f"[✅ STRICT ORDER] {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(temp_seq)} items)")
+                print(
+                    f"[✅ STRICT ORDER] {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} ({len(temp_seq)} items)"
+                )
                 continue
 
         # --- INVARIANT 2: Unique-Sum Bijections ---
@@ -178,7 +191,9 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         d_sums = Counter(round(it.sum, 2) for it in doc.items)
         i_sums = Counter(it["sum"] for it in iiko_items)
 
-        unique_sums = {s for s, count in d_sums.items() if count == 1 and i_sums.get(s) == 1}
+        unique_sums = {
+            s for s, count in d_sums.items() if count == 1 and i_sums.get(s) == 1
+        }
         if not unique_sums:
             continue
 
@@ -189,13 +204,15 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         for s in unique_sums:
             d_it = doc_by_sum[s]
             i_it = iiko_by_sum_row[s]
-            stage2_pairs.append({
-                "supplier_id": supplier_id,
-                "raw_name": d_it.raw_name,
-                "product_id": i_it["product_id"],
-                "iiko_name": i_it["name"],
-                "article": d_it.article or i_it["article"]
-            })
+            stage2_pairs.append(
+                {
+                    "supplier_id": supplier_id,
+                    "raw_name": d_it.raw_name,
+                    "product_id": i_it["product_id"],
+                    "iiko_name": i_it["name"],
+                    "article": d_it.article or i_it["article"],
+                }
+            )
 
         if stage2_pairs:
             unique_sum_invoices += 1
@@ -206,28 +223,50 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     product_id=pair["product_id"],
                     iiko_name=pair["iiko_name"],
                     article=pair["article"],
-                    weight=1
+                    weight=1,
                 )
                 learned_items_count += 1
-            print(f"[🎯 UNIQUE SUMS]  {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} (Matched {len(stage2_pairs)} unambiguous items)")
+            print(
+                f"[🎯 UNIQUE SUMS]  {os.path.basename(doc.source_file):<28} | Doc: {target_num:<10} | Sum: {target_sum:>9.2f} (Matched {len(stage2_pairs)} unambiguous items)"
+            )
 
     print("\n" + "=" * 70)
     print("📊 [DETERMINISTIC TRAINING SUMMARY]")
     print(f"  Processed documents:                {len(parsed_docs)}")
     print(f"  Matched via strict order:           {sequential_invoices}")
     print(f"  Matched via unique sum bijections:  {unique_sum_invoices}")
-    print(f"  TOTAL INVOICES UTILIZED:            {sequential_invoices + unique_sum_invoices} of {len(parsed_docs)}")
+    print(
+        f"  TOTAL INVOICES UTILIZED:            {sequential_invoices + unique_sum_invoices} of {len(parsed_docs)}"
+    )
     print(f"  TOTAL VERIFIED MAPPINGS IN DB:      {learned_items_count}")
     print("=" * 70)
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Automated multi-pass training for iiko item matcher")
-    parser.add_argument("--dir", default="data/in/diadoc_xmls", help="Directory with invoice files (default: data/in/diadoc_xmls)")
-    parser.add_argument("--from-date", dest="override_from", default=None, help="Explicit start date YYYY-MM-DD")
-    parser.add_argument("--to-date", dest="override_to", default=None, help="Explicit end date YYYY-MM-DD")
+    parser = argparse.ArgumentParser(
+        description="Automated multi-pass training for iiko item matcher"
+    )
+    parser.add_argument(
+        "--dir",
+        default="data/in/diadoc_xmls",
+        help="Directory with invoice files (default: data/in/diadoc_xmls)",
+    )
+    parser.add_argument(
+        "--from-date",
+        dest="override_from",
+        default=None,
+        help="Explicit start date YYYY-MM-DD",
+    )
+    parser.add_argument(
+        "--to-date",
+        dest="override_to",
+        default=None,
+        help="Explicit end date YYYY-MM-DD",
+    )
     args = parser.parse_args()
 
     train(args.dir, args.override_from, args.override_to)
+
 
 if __name__ == "__main__":
     main()
