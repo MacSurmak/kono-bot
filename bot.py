@@ -1,0 +1,52 @@
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from config import cfg
+from storage import init_db
+from middlewares.auth import AuthMiddleware
+from handlers import main_router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("iiko_bot")
+
+
+async def main():
+    """Initializes and runs the supply Telegram bot in polling mode."""
+    logger.info("Initializing database schema and state...")
+    init_db()
+
+    bot_token = cfg["telegram"]["bot_token"]
+    bot = Bot(
+        token=bot_token,
+        default=DefaultBotProperties(parse_mode="HTML")
+    )
+
+    # In-memory FSM storage is completely sufficient and self-contained for local deployment
+    dp = Dispatcher(storage=MemoryStorage())
+
+    # Register access control middleware
+    dp.update.middleware(AuthMiddleware())
+
+    # Include main handlers
+    dp.include_router(main_router)
+
+    logger.info("Starting Telegram Bot long-polling...")
+    await bot.delete_webhook(drop_pending_updates=True)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+        logger.info("Bot session closed successfully.")
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped manually.")

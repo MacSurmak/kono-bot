@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  iiko-bot:
+    build: .
+    container_name: kono-iiko-bot
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    environment:
+      - TZ=Europe/Moscow

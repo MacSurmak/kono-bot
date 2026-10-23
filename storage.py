@@ -63,6 +63,30 @@ def init_db():
                 last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # 4. Telegram bot authorized users table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_users (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                full_name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # 5. One-time invitation tokens for secure onboarding
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_invites (
+                token TEXT PRIMARY KEY,
+                created_by INTEGER NOT NULL,
+                used_by INTEGER,
+                is_used INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                used_at TIMESTAMP
+            )
+        """)
         conn.commit()
 
 
@@ -191,6 +215,114 @@ def get_all_gemini_key_stats() -> List[Tuple[str, int, int, int, str]]:
             ORDER BY total_requests DESC
         """)
         return cur.fetchall()
+
+
+# ================= TELEGRAM ACCESS CONTROL REPOSITORY =================
+def get_bot_user(telegram_id: int) -> Optional[Dict[str, Any]]:
+    """Retrieves an active bot user by Telegram ID."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT telegram_id, username, full_name, role, is_active FROM bot_users WHERE telegram_id = ?",
+            (telegram_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "telegram_id": row[0],
+            "username": row[1],
+            "full_name": row[2],
+            "role": row[3],
+            "is_active": bool(row[4]),
+        }
+
+
+def upsert_bot_user(telegram_id: int, username: Optional[str], full_name: str, role: str = "user"):
+    """Creates or updates a bot user record."""
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO bot_users (telegram_id, username, full_name, role, is_active)
+            VALUES (?, ?, ?, ?, 1)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                username = excluded.username,
+                full_name = excluded.full_name,
+                role = excluded.role,
+                is_active = 1
+        """,
+            (telegram_id, username, full_name, role),
+        )
+
+
+def create_invite_token(created_by: int) -> str:
+    """Generates and persists a unique single-use invitation token."""
+    import secrets
+
+    token = secrets.token_urlsafe(16)
+    with get_db_connection() as conn:
+        conn.execute(
+            "INSERT INTO bot_invites (token, created_by, is_used) VALUES (?, ?, 0)",
+            (token, created_by),
+        )
+    return token
+
+
+def validate_and_consume_invite(
+    token: str, telegram_id: int, username: Optional[str], full_name: str
+) -> bool:
+    """Validates single-use token and registers new user transactionally."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT token, is_used FROM bot_invites WHERE token = ?", (token,)
+        )
+        row = cur.fetchone()
+        if not row or row[1] == 1:
+            return False
+
+        conn.execute(
+            """
+            UPDATE bot_invites 
+            SET is_used = 1, used_by = ?, used_at = CURRENT_TIMESTAMP 
+            WHERE token = ?
+        """,
+            (telegram_id, token),
+        )
+
+        conn.execute(
+            """
+            INSERT INTO bot_users (telegram_id, username, full_name, role, is_active)
+            VALUES (?, ?, ?, 'operator', 1)
+            ON CONFLICT(telegram_id) DO UPDATE SET
+                username = excluded.username,
+                full_name = excluded.full_name,
+                is_active = 1
+        """,
+            (telegram_id, username, full_name),
+        )
+        return True
+
+
+def get_all_bot_users() -> List[Dict[str, Any]]:
+    """Returns a list of all registered users."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT telegram_id, username, full_name, role, is_active, created_at FROM bot_users ORDER BY created_at ASC"
+        )
+        rows = cur.fetchall()
+        return [
+            {
+                "telegram_id": r[0],
+                "username": r[1],
+                "full_name": r[2],
+                "role": r[3],
+                "is_active": bool(r[4]),
+                "created_at": r[5],
+            }
+            for r in rows
+        ]
 
 
 if __name__ == "__main__":

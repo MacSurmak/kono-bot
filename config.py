@@ -50,6 +50,14 @@ def load_and_validate_config() -> dict:
                 f"Invalid gemini key entry at index {idx}: must contain 'name' and 'api_key'"
             )
 
+    # Validate telegram section
+    telegram = config.get("telegram")
+    if not isinstance(telegram, dict):
+        raise ConfigurationError("Missing or invalid 'telegram' section in config.yaml")
+    for field in ("bot_token", "admin_id"):
+        if not telegram.get(field):
+            raise ConfigurationError(f"Missing required telegram parameter: '{field}'")
+
     return config
 
 
