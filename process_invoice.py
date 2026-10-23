@@ -57,7 +57,10 @@ def main():
 
     # 6. Dry-run simulation bypass
     if args.dry_run:
-        with open("dry_run_preview.xml", "w", encoding="utf-8") as f:
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "out")
+        os.makedirs(out_dir, exist_ok=True)
+        preview_path = os.path.join(out_dir, "dry_run_preview.xml")
+        with open(preview_path, "w", encoding="utf-8") as f:
             f.write(xml_payload)
         total_sum = sum(it["sum"] for it in matched_items)
         print("\n" + "="*75)
@@ -65,7 +68,7 @@ def main():
         print(f"  Target Store:      {store_name}")
         print(f"  Supplier:          {supplier_name}")
         print(f"  Total Amount:      {total_sum:,.2f} RUB")
-        print(f"  Preview XML:       dry_run_preview.xml")
+        print(f"  Preview XML:       {preview_path}")
         print("="*75)
         return
 

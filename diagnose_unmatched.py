@@ -216,21 +216,24 @@ def diagnose(data_dir: str):
             })
 
     # Save full telemetry
-    with open("unmatched_diagnosis.json", "w", encoding="utf-8") as f:
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "out")
+    os.makedirs(out_dir, exist_ok=True)
+    report_path = os.path.join(out_dir, "unmatched_diagnosis.json")
+    with open(report_path, "w", encoding="utf-8") as f:
         json.dump(details, f, ensure_ascii=False, indent=2)
 
     # Print summary
     print("\n" + "=" * 70)
-    print("📊 СВОДКА ДИАГНОСТИКИ ПО 150 ДОКУМЕНТАМ:")
+    print("📊 DIAGNOSTIC SUMMARY:")
     print("=" * 70)
-    print(f"  [1] Идеальный порядок (уже в базе):             {stats['perfect_order']}")
-    print(f"  [2] Перестановка строк (100% РЕШАЕМАЯ):         {stats['scrambled_solvable']}")
-    print(f"  [3] Перестановка с дублями цен / расхождениями: {stats['scrambled_ambiguous']}")
-    print(f"  [4] Не совпадает количество строк:              {stats['line_count_mismatch']}")
-    print(f"  [5] Содержит архивные позиции:                  {stats['archived_item_present']}")
-    print(f"  [6] Не найдено в iiko вообще:                   {stats['not_found']}")
+    print(f"  [1] Strict order matched:                       {stats['perfect_order']}")
+    print(f"  [2] Permutation solvable:                       {stats['scrambled_solvable']}")
+    print(f"  [3] Ambiguous duplicate prices:                 {stats['scrambled_ambiguous']}")
+    print(f"  [4] Line count mismatch:                        {stats['line_count_mismatch']}")
+    print(f"  [5] Archived items present:                     {stats['archived_item_present']}")
+    print(f"  [6] Not found in iiko:                          {stats['not_found']}")
     print("=" * 70)
-    print(f"[+] Подробный отчет сохранен в: unmatched_diagnosis.json\n")
+    print(f"[+] Diagnostic report written to: {report_path}\n")
 
     # Show solvable examples
     solvable_examples = [d for d in details if d["status"] == "SCRAMBLED_PERMUTATION_SOLVABLE"]
@@ -242,7 +245,8 @@ def diagnose(data_dir: str):
                 print(f"    - {pair['raw_name'][:35]:<36} -> {pair['iiko_name'][:35]:<36} ({pair['qty']} шт, {pair['sum']:.2f} руб)")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Диагностика несопоставленных накладных")
-    parser.add_argument("--dir", default="diadoc_xmls", help="Папка с накладными")
+def main():
+    parser = argparse.ArgumentParser(description="Diagnostic utility for unmatched invoices")
+    parser.add_argument("--dir", default="data/in/diadoc_xmls", help="Directory with invoice files")
     args = parser.parse_args()
     diagnose(args.dir)

@@ -164,9 +164,9 @@ def dump_comparison(data_dir: str, target_doc: str = None, output_file: str = "u
 
 def main():
     parser = argparse.ArgumentParser(description="Dump full side-by-side tables for unmatched invoices")
-    parser.add_argument("--dir", default="diadoc_xmls", help="Directory with invoice files")
+    parser.add_argument("--dir", default="data/in/diadoc_xmls", help="Directory with invoice files")
     parser.add_argument("--doc", default=None, help="Specific document number to inspect directly in terminal")
-    parser.add_argument("--out", default="unmatched_full_dump.txt", help="Output file for complete dump")
+    parser.add_argument("--out", default="data/out/unmatched_full_dump.txt", help="Output file for complete dump")
     args = parser.parse_args()
 
     dump_comparison(args.dir, args.doc, args.out)

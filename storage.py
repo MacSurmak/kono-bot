@@ -1,9 +1,14 @@
 import sqlite3
 from typing import Optional, List, Dict, Any, Tuple
 
-DB_PATH = "iiko_matcher.db"
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_DIR = os.path.join(BASE_DIR, "data", "state")
+DB_PATH = os.path.join(STATE_DIR, "iiko_matcher.db")
 
 def init_db():
+    os.makedirs(STATE_DIR, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         

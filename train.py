@@ -222,7 +222,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
 
 def main():
     parser = argparse.ArgumentParser(description="Automated multi-pass training for iiko item matcher")
-    parser.add_argument("--dir", default="diadoc_xmls", help="Directory with invoice files (default: diadoc_xmls)")
+    parser.add_argument("--dir", default="data/in/diadoc_xmls", help="Directory with invoice files (default: data/in/diadoc_xmls)")
     parser.add_argument("--from-date", dest="override_from", default=None, help="Explicit start date YYYY-MM-DD")
     parser.add_argument("--to-date", dest="override_to", default=None, help="Explicit end date YYYY-MM-DD")
     args = parser.parse_args()

@@ -2,7 +2,10 @@
 import sys
 import sqlite3
 
-DB_PATH = "iiko_matcher.db"
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "data", "state", "iiko_matcher.db")
 
 def inspect(search_query: str = ""):
     conn = sqlite3.connect(DB_PATH)
