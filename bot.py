@@ -27,14 +27,23 @@ async def main():
         default=DefaultBotProperties(parse_mode="HTML")
     )
 
+    from aiogram.utils.callback_answer import CallbackAnswerMiddleware
+    from middlewares.throttling import ThrottlingMiddleware
+    from lexicon import set_bot_commands
+
     # In-memory FSM storage is completely sufficient and self-contained for local deployment
     dp = Dispatcher(storage=MemoryStorage())
 
-    # Register access control middleware
+    # Register middlewares in strict sequential order
+    dp.callback_query.middleware(CallbackAnswerMiddleware())
+    dp.update.middleware(ThrottlingMiddleware(rate_limit=0.5))
     dp.update.middleware(AuthMiddleware())
 
     # Include main handlers
     dp.include_router(main_router)
+
+    # Set persistent Telegram menu commands
+    await set_bot_commands(bot)
 
     logger.info("Starting Telegram Bot long-polling...")
     await bot.delete_webhook(drop_pending_updates=True)

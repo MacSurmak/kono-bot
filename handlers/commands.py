@@ -20,47 +20,24 @@ async def handle_start(message: types.Message):
             username=user.username,
             full_name=user.full_name,
         )
+        from lexicon import t
         if success:
-            await message.answer(
-                f"🎉 <b>Добро пожаловать, {user.first_name}!</b>\n\n"
-                "Приглашение успешно активировано.\n"
-                "Теперь вы можете отправлять сюда накладные поставщиков:\n"
-                "• <b>XML-файлы</b> из Диадока (УПД / счета-фактуры)\n"
-                "• <b>PDF-документы</b> (сканы, накладные, спецификации)\n\n"
-                "Бот автоматически распознает номенклатуру и сформирует черновик в iiko.",
-                parse_mode="HTML",
-            )
+            await message.answer(t("start_welcome_invite", name=user.first_name), parse_mode="HTML")
             return
         else:
-            await message.answer(
-                "❌ <b>Ссылка-приглашение недействительна или уже была использована.</b>",
-                parse_mode="HTML",
-            )
+            await message.answer(t("start_invite_invalid"), parse_mode="HTML")
             return
 
+    from lexicon import t
     db_user = get_bot_user(user.id)
     if db_user and db_user["is_active"]:
-        await message.answer(
-            f"👋 <b>С возвращением, {user.first_name}!</b>\n\n"
-            "Отправьте мне файл накладной (<b>.xml</b> или <b>.pdf</b>), чтобы начать обработку.",
-            parse_mode="HTML",
-        )
+        await message.answer(t("start_registered", name=user.first_name), parse_mode="HTML")
     else:
-        await message.answer(
-            "⛔ <b>Доступ ограничен.</b> Для работы с ботом требуется персональное приглашение.",
-            parse_mode="HTML",
-        )
+        await message.answer(t("start_unauthorized"), parse_mode="HTML")
 
 
 @router.message(Command("help"))
 async def handle_help(message: types.Message):
-    """Displays user assistance manual."""
-    help_text = (
-        "📖 <b>Инструкция по работе с KONO Supply Bot:</b>\n\n"
-        "1. Отправьте боту документ (файл накладной <b>.xml</b> или <b>.pdf</b>).\n"
-        "2. Бот мгновенно разберет файл и предложит выбрать склад доставки (<b>Аэропорт</b> или <b>Октябрьская</b>).\n"
-        "3. Если все позиции известны, бот предложит создать черновик в iiko.\n"
-        "4. Если в накладной появились новые товары, бот предложит сопоставить их кнопками.\n\n"
-        "<i>Накладные всегда создаются в iiko со статусом черновика (NOT_PROCESSED).</i>"
-    )
-    await message.answer(help_text, parse_mode="HTML")
+    """Displays user assistance manual from lexicon."""
+    from lexicon import t
+    await message.answer(t("help_text"), parse_mode="HTML")

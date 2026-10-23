@@ -41,15 +41,12 @@ class AuthMiddleware(BaseMiddleware):
             data["user_role"] = db_user["role"]
             return await handler(event, data)
 
-        # Reject unauthorized access loudly
-        warning_msg = (
-            "⛔ <b>Доступ ограничен.</b>\n\n"
-            "Этот бот работает только по персональным приглашениям.\n"
-            "Запросите ссылку-приглашение у администратора сети."
-        )
+        # Reject unauthorized access loudly using centralized lexicon
+        from lexicon import t
+
         if isinstance(event, Message):
-            await event.answer(warning_msg, parse_mode="HTML")
+            await event.answer(t("auth_access_denied_msg"), parse_mode="HTML")
         elif isinstance(event, CallbackQuery):
-            await event.answer("⛔ Доступ ограничен. Вы не авторизованы.", show_alert=True)
+            await event.answer(t("auth_access_denied_alert"), show_alert=True)
 
         return None
