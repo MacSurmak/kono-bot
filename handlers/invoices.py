@@ -1,8 +1,10 @@
 import os
 import uuid
+import asyncio
 from typing import Dict, Any, List
 from aiogram import Router, types, F
 from rapidfuzz import process, fuzz
+from loguru import logger
 
 from lexicon import t
 from parsers import parse_document
@@ -53,12 +55,10 @@ async def handle_document_upload(message: types.Message):
     doc_id = str(uuid.uuid4())[:8]
     temp_path = os.path.join(TMP_DIR, f"{doc_id}_{filename}")
 
-    from loguru import logger
-
     try:
         logger.info(f"Incoming document from user {message.from_user.id} ({message.from_user.full_name}): '{filename}'")
         await message.bot.download(doc.file_id, destination=temp_path)
-        parsed_doc = parse_document(temp_path)
+        parsed_doc = await asyncio.to_thread(parse_document, temp_path)
 
         if not parsed_doc or not parsed_doc.items:
             raise ValueError("Документ не содержит товарных позиций или поврежден.")
@@ -109,8 +109,6 @@ async def process_store_selection(callback: types.CallbackQuery):
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
-
-    from loguru import logger
 
     session["store_id"] = store_id
     session["store_name"] = ALLOWED_STORES[store_id]
@@ -398,8 +396,6 @@ async def process_draft_upload(callback: types.CallbackQuery):
         resp = client.upload_invoice(session["store_id"], xml_payload)
         import xml.etree.ElementTree as ET
 
-        from loguru import logger
-
         if resp.status_code == 200 and "valid>true" in resp.text:
             iiko_doc_num = ET.fromstring(resp.content).findtext("documentNumber") or "Создан"
             logger.info(f"Draft invoice created in iiko: #{iiko_doc_num} (incoming: #{session['parsed_doc'].doc_number}) for store '{session['store_name']}'")
@@ -416,7 +412,6 @@ async def process_draft_upload(callback: types.CallbackQuery):
             await callback.message.edit_text(t("invoice_upload_failed", error=resp.text[:300]))
 
     except Exception as e:
-        from loguru import logger
         logger.exception(f"Unexpected error while uploading invoice to iiko: {e}")
         await callback.message.edit_text(t("invoice_upload_failed", error=str(e)))
     finally:
