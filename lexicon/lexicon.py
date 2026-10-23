@@ -68,6 +68,16 @@ LEXICON: Dict[str, str] = {
         "🏢 <b>Найдено несколько подразделений поставщика (ИНН: {inn}):</b>\n"
         "Выберите нужное юридическое лицо:"
     ),
+    "invoice_supplier_not_found_fuzzy": (
+        "🔍 <b>Поставщик с ИНН <code>{inn}</code> не найден в iiko.</b>\n"
+        "Распознанное имя: <b>«{raw_name}»</b>\n\n"
+        "<i>Возможна опечатка в базе iiko или нечеткий скан.</i>\n"
+        "Выберите подходящего контрагента из вашей базы iiko:"
+    ),
+    "invoice_supplier_none_matched": (
+        "❌ <b>Поставщик «{raw_name}» (ИНН: {inn}) не найден в iiko.</b>\n"
+        "Убедитесь, что контрагент заведен в iikoOffice."
+    ),
     "invoice_all_matched_card": (
         "✅ <b>Все позиции успешно сопоставлены!</b>\n\n"
         "📄 Документ: № <code>{doc_number}</code> от {doc_date}\n"

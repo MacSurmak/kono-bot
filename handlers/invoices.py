@@ -122,14 +122,45 @@ async def process_store_selection(callback: types.CallbackQuery):
     if pref:
         session["supplier_id"], session["supplier_name"] = pref[0], pref[1]
     else:
-        suppliers = client.get_suppliers_grouped()
-        candidates = suppliers.get(parsed_doc.supplier_inn, [])
+        suppliers_grouped = client.get_suppliers_grouped()
+        candidates = suppliers_grouped.get(parsed_doc.supplier_inn, [])
+
         if not candidates:
-            await callback.message.edit_text(
-                t("invoice_parsing_error", error=f"Поставщик с ИНН {parsed_doc.supplier_inn} не найден в iiko!")
+            # Fallback: fuzzy search supplier by name across entire iiko registry
+            all_suppliers = [s for supp_list in suppliers_grouped.values() for s in supp_list]
+            supp_names = [s["name"] for s in all_suppliers]
+            top_matches = process.extract(
+                parsed_doc.supplier_name, supp_names, limit=4, scorer=fuzz.token_sort_ratio
             )
-            cleanup_session(doc_id)
-            return
+
+            fuzzy_candidates = []
+            for name, score, _ in top_matches:
+                if score >= 45:
+                    match_supp = next((s for s in all_suppliers if s["name"] == name), None)
+                    if match_supp and match_supp not in fuzzy_candidates:
+                        fuzzy_candidates.append({**match_supp, "score": score})
+
+            if fuzzy_candidates:
+                from keyboards.invoices_kb import get_fuzzy_supplier_kb
+                await callback.message.edit_text(
+                    t(
+                        "invoice_supplier_not_found_fuzzy",
+                        inn=parsed_doc.supplier_inn or "Не указан",
+                        raw_name=parsed_doc.supplier_name,
+                    ),
+                    reply_markup=get_fuzzy_supplier_kb(doc_id, fuzzy_candidates)
+                )
+                return
+            else:
+                await callback.message.edit_text(
+                    t(
+                        "invoice_supplier_none_matched",
+                        raw_name=parsed_doc.supplier_name,
+                        inn=parsed_doc.supplier_inn or "Не указан"
+                    )
+                )
+                cleanup_session(doc_id)
+                return
 
         if len(candidates) == 1:
             session["supplier_id"] = candidates[0]["id"]
@@ -147,7 +178,7 @@ async def process_store_selection(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("inv:supp:"))
 async def process_supplier_disambiguation(callback: types.CallbackQuery):
-    """Saves chosen supplier branch and advances to item alignment."""
+    """Saves chosen supplier branch globally and advances to item alignment."""
     parts = callback.data.split(":")
     doc_id, supp_id = parts[2], parts[3]
 
@@ -156,13 +187,16 @@ async def process_supplier_disambiguation(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    suppliers = client.get_suppliers_grouped()
-    candidates = suppliers.get(session["parsed_doc"].supplier_inn, [])
-    chosen = next((c for c in candidates if c["id"] == supp_id), None)
+    suppliers_grouped = client.get_suppliers_grouped()
+    all_suppliers = [s for supp_list in suppliers_grouped.values() for s in supp_list]
+    chosen = next((c for c in all_suppliers if c["id"] == supp_id), None)
+
     if chosen:
-        save_preferred_supplier(session["parsed_doc"].supplier_inn, chosen["id"], chosen["name"])
+        inn_to_save = session["parsed_doc"].supplier_inn or "CUSTOM"
+        save_preferred_supplier(inn_to_save, chosen["id"], chosen["name"])
         session["supplier_id"] = chosen["id"]
         session["supplier_name"] = chosen["name"]
+        logger.info(f"Associated supplier preference: INN={inn_to_save} -> '{chosen['name']}' ({chosen['id']})")
 
     await proceed_with_item_alignment(callback.message, doc_id)
 

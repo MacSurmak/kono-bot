@@ -28,11 +28,29 @@ def get_supplier_disambiguation_kb(
     """Generates supplier disambiguation choices for identical INNs."""
     rows = []
     for c in candidates:
-        dep = f" (цех {c['dept_codes']})" if c["dept_codes"] else ""
+        dep = f" (цех {c['dept_codes']})" if c.get("dept_codes") else ""
         text = f"{c['name'][:30]}{dep}"
         rows.append([
             InlineKeyboardButton(
                 text=text,
+                callback_data=f"inv:supp:{doc_id}:{c['id']}"
+            )
+        ])
+    rows.append([InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_fuzzy_supplier_kb(
+    doc_id: str, candidates: List[Dict[str, Any]]
+) -> InlineKeyboardMarkup:
+    """Generates fuzzy supplier selection choices based on catalog name matching."""
+    rows = []
+    for c in candidates:
+        name = c["name"][:32]
+        score = f"{c['score']:.0f}%"
+        rows.append([
+            InlineKeyboardButton(
+                text=f"{name} ({score})",
                 callback_data=f"inv:supp:{doc_id}:{c['id']}"
             )
         ])
