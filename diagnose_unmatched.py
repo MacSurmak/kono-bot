@@ -238,15 +238,17 @@ def diagnose(data_dir: str):
     # Show solvable examples
     solvable_examples = [d for d in details if d["status"] == "SCRAMBLED_PERMUTATION_SOLVABLE"]
     if solvable_examples:
-        print("💡 ПРИМЕРЫ РЕШАЕМЫХ ПЕРЕСТАНОВОК (Строки перепутаны, но суммы сходятся):")
+        print("💡 EXAMPLES OF SOLVABLE PERMUTATIONS (Scrambled rows with matching sums):")
         for ex in solvable_examples[:3]:
-            print(f"\n  • Накладная № {ex['doc_number']} (в iiko: {ex['iiko_internal_num']}), строк: {ex['lines_count']}")
+            print(f"\n  • Invoice #{ex['doc_number']} (iiko #{ex['iiko_internal_num']}), lines: {ex['lines_count']}")
             for pair in ex["example_matches"]:
-                print(f"    - {pair['raw_name'][:35]:<36} -> {pair['iiko_name'][:35]:<36} ({pair['qty']} шт, {pair['sum']:.2f} руб)")
+                print(f"    - {pair['raw_name'][:35]:<36} -> {pair['iiko_name'][:35]:<36} ({pair['qty']} qty, {pair['sum']:.2f} RUB)")
 
-if __name__ == "__main__":
 def main():
     parser = argparse.ArgumentParser(description="Diagnostic utility for unmatched invoices")
     parser.add_argument("--dir", default="data/in/diadoc_xmls", help="Directory with invoice files")
     args = parser.parse_args()
     diagnose(args.dir)
+
+if __name__ == "__main__":
+    main()

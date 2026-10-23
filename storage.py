@@ -139,4 +139,4 @@ def get_all_gemini_key_stats() -> List[Tuple[str, int, int, int, str]]:
 
 if __name__ == "__main__":
     init_db()
-    print("[+] БД инициализирована без лишних сущностей.")
+    print("[+] Database initialized successfully.")

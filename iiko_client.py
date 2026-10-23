@@ -21,7 +21,7 @@ class IikoClient:
         if resp.status_code != 200:
             resp = self.session.get(f"{self.base_url}/api/auth", params={"login": LOGIN, "pass": PASSWORD})
         if resp.status_code != 200:
-            raise ConnectionError(f"Ошибка авторизации в iiko: {resp.status_code} - {resp.text}")
+            raise ConnectionError(f"iiko authorization failed: {resp.status_code} - {resp.text}")
         self.session.params = {"key": resp.text.strip()}
 
     def get(self, endpoint: str, **kwargs):
@@ -82,8 +82,8 @@ class IikoClient:
         # Safety guardrail preventing uploads to unapproved stores
         if target_store_id not in ALLOWED_STORES:
             raise PermissionError(
-                f"КРИТИЧЕСКАЯ БЛОКИРОВКА: Попытка отправить накладную на чужой склад {target_store_id}! "
-                f"Разрешены только: {ALLOWED_STORES}"
+                f"CRITICAL: Attempted upload to unauthorized store {target_store_id}! "
+                f"Allowed stores: {ALLOWED_STORES}"
             )
 
         headers = {"Content-Type": "application/xml; charset=utf-8"}

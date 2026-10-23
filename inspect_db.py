@@ -16,10 +16,10 @@ def inspect(search_query: str = ""):
     total_unique, total_votes, total_suppliers = cur.fetchone()
     
     print("=" * 80)
-    print(f"📊 СТАТИСТИКА БАЗЫ СОПОСТАВЛЕНИЙ ({DB_PATH})")
-    print(f"   Поставщиков в базе:          {total_suppliers or 0}")
-    print(f"   Уникальных пар (связок):     {total_unique or 0}")
-    print(f"   Всего подтверждений/голосов: {total_votes or 0}")
+    print(f"📊 ITEM MAPPING KNOWLEDGE BASE STATS ({DB_PATH})")
+    print(f"   Suppliers in database:        {total_suppliers or 0}")
+    print(f"   Unique product pairs:         {total_unique or 0}")
+    print(f"   Total confirmed votes:        {total_votes or 0}")
     print("=" * 80)
 
     # Check for ambiguous item mappings
@@ -32,9 +32,9 @@ def inspect(search_query: str = ""):
     conflicts = cur.fetchall()
 
     if conflicts:
-        print(f"\n⚠️  НАЙДЕНО СПОРНЫХ ПОЗИЦИЙ: {len(conflicts)}")
+        print(f"\n⚠️  AMBIGUOUS MAPPINGS DETECTED: {len(conflicts)}")
         for supp_id, raw_name, _ in conflicts[:5]:
-            print(f"\n   Позиция поставщика: '{raw_name}'")
+            print(f"\n   Vendor Item Name: '{raw_name}'")
             cur.execute("""
                 SELECT iiko_name, iiko_article, usage_count 
                 FROM supplier_mappings 
@@ -42,14 +42,14 @@ def inspect(search_query: str = ""):
                 ORDER BY usage_count DESC
             """, (supp_id, raw_name))
             for row in cur.fetchall():
-                print(f"     └─ {row[2]} раз(а) выбрано: '{row[0]}' (арт. {row[1]})")
+                print(f"     └─ selected {row[2]} time(s): '{row[0]}' (sku: {row[1]})")
         print("-" * 80)
     else:
-        print("\n✨ ВСЕ СВЯЗКИ 100% ОДНОЗНАЧНЫ! Конфликтов нет.")
+        print("\n✨ ALL MAPPINGS ARE 100% UNAMBIGUOUS. Zero conflicts.")
 
     # Case-insensitive Unicode substring search
     if search_query:
-        print(f"\n🔍 РЕЗУЛЬТАТЫ ПОИСКА ПО ЗАПРОСУ: '{search_query}'")
+        print(f"\n🔍 SEARCH RESULTS FOR QUERY: '{search_query}'")
         cur.execute("""
             SELECT raw_name, iiko_name, iiko_article, usage_count
             FROM supplier_mappings
@@ -57,7 +57,7 @@ def inspect(search_query: str = ""):
             ORDER BY usage_count DESC
         """, (f"%{search_query.lower()}%", f"%{search_query.lower()}%", f"%{search_query}%"))
     else:
-        print("\n🏆 ТОП-15 САМЫХ ЧАСТО ПРОВОДИМЫХ ПОЗИЦИЙ:")
+        print("\n🏆 TOP-15 MOST FREQUENT MAPPINGS:")
         cur.execute("""
             SELECT raw_name, iiko_name, iiko_article, usage_count
             FROM supplier_mappings
@@ -67,9 +67,9 @@ def inspect(search_query: str = ""):
 
     rows = cur.fetchall()
     if not rows:
-        print("   Ничего не найдено.")
+        print("   No records found.")
     else:
-        print(f"{'ГОЛОСА':<8} | {'ИЗ НАКЛАДНОЙ':<40} | {'ТОВАР В IIKO':<35}")
+        print(f"{'VOTES':<8} | {'INVOICE RAW NAME':<40} | {'IIKO PRODUCT NAME':<35}")
         print("-" * 88)
         for r in rows:
             votes = f"x{r[3]}"
@@ -82,8 +82,8 @@ def inspect(search_query: str = ""):
     from storage import get_all_gemini_key_stats
     gemini_stats = get_all_gemini_key_stats()
     if gemini_stats:
-        print("\n🔑 СТАТИСТИКА РОТАЦИИ КЛЮЧЕЙ GEMINI API:")
-        print(f"{'АККАУНТ':<20} | {'ВСЕГО':<8} | {'УСПЕХ':<8} | {'429 ЛИМИТ':<10} | {'ПОСЛЕДНИЙ ЗАПРОС'}")
+        print("\n🔑 GEMINI API KEY ROTATION TELEMETRY:")
+        print(f"{'ACCOUNT':<20} | {'TOTAL':<8} | {'SUCCESS':<8} | {'429 LIMIT':<10} | {'LAST REQUEST'}")
         print("-" * 75)
         for g_row in gemini_stats:
             print(f"{g_row[0]:<20} | {g_row[1]:<8} | {g_row[2]:<8} | {g_row[3]:<10} | {g_row[4]}")
