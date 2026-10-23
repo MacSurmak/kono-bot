@@ -42,10 +42,10 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                 try:
                     d_obj = datetime.strptime(doc.doc_date, "%Y-%m-%d").date()
                     valid_dates.append(d_obj)
-                except ValueError:
-                    pass
-        except Exception:
-            continue
+                except ValueError as ve:
+                    print(f"[-] [Date Warning] Invalid date '{doc.doc_date}' in {os.path.basename(file_path)}: {ve}")
+        except Exception as e:
+            print(f"[-] [Parse Error] Failed to parse {os.path.basename(file_path)}: {e}")
 
     if not parsed_docs:
         print("[-] Failed to parse any document in directory.")
@@ -79,8 +79,10 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         f"[+] Active inventory pool: {len(active_pool)} (archive and delivery excluded)"
     )
 
-    # 4. Fetch historical invoices from iiko for detected period
-    print(f"[*] Querying historical invoices from iiko...")
+    # 4. Fetch historical invoices and suppliers from iiko
+    print(f"[*] Querying historical invoices and supplier registry from iiko...")
+    suppliers_grouped = client.get_suppliers_grouped()
+
     inv_resp = client.get(
         "/api/documents/export/incomingInvoice",
         params={"from": date_from, "to": date_to},
@@ -89,21 +91,22 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
     iiko_docs = inv_root.findall(".//document")
     print(f"[+] Invoices found in iiko for this period: {len(iiko_docs)}")
 
-    # Index iiko invoices for O(1) matching
-    iiko_by_num = {}
-    iiko_by_sum = {}
+    # Index iiko invoices strictly by supplier to prevent cross-vendor namespace collisions
+    iiko_by_supp_and_num = {}
+    iiko_by_supp_and_sum = {}
 
     for d in iiko_docs:
+        s_id = (d.findtext("supplier") or "").strip()
         inc_num = (d.findtext("incomingDocumentNumber") or "").strip()
         items = d.findall(".//items/item")
         doc_sum = round(sum(float(it.findtext("sum", 0)) for it in items), 2)
 
-        if inc_num:
-            iiko_by_num[inc_num] = d
-        if doc_sum > 0:
-            iiko_by_sum.setdefault(doc_sum, []).append(d)
+        if s_id and inc_num:
+            iiko_by_supp_and_num[(s_id, inc_num)] = d
+        if s_id and doc_sum > 0:
+            iiko_by_supp_and_sum.setdefault((s_id, doc_sum), []).append(d)
 
-    # 5. Deterministic alignment engine (ZERO fuzzy search, 100% mathematical certainty)
+    # 5. Deterministic alignment engine (Strict Invariants & Vendor Isolation)
     print("\n[*] Starting Deterministic Training Engine (Strict Invariants)...")
     from collections import Counter
 
@@ -115,11 +118,21 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         target_num = doc.doc_number
         target_sum = round(sum(it.sum for it in doc.items), 2)
 
-        matched_iiko_doc = iiko_by_num.get(target_num)
-        if matched_iiko_doc is None and target_sum in iiko_by_sum:
-            candidates = iiko_by_sum[target_sum]
-            if len(candidates) == 1:
-                matched_iiko_doc = candidates[0]
+        valid_supps = suppliers_grouped.get(doc.supplier_inn, [])
+        valid_supplier_ids = {s["id"] for s in valid_supps}
+
+        matched_iiko_doc = None
+        for s_id in valid_supplier_ids:
+            if (s_id, target_num) in iiko_by_supp_and_num:
+                matched_iiko_doc = iiko_by_supp_and_num[(s_id, target_num)]
+                break
+
+        if matched_iiko_doc is None:
+            for s_id in valid_supplier_ids:
+                candidates = iiko_by_supp_and_sum.get((s_id, target_sum), [])
+                if len(candidates) == 1:
+                    matched_iiko_doc = candidates[0]
+                    break
 
         if matched_iiko_doc is None:
             continue

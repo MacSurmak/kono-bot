@@ -31,11 +31,20 @@ class IikoClient:
             )
         self.session.params = {"key": resp.text.strip()}
 
+    def _request_with_reauth(self, method: str, endpoint: str, **kwargs):
+        """Executes HTTP request and transparently refreshes session on token expiration."""
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        resp = self.session.request(method, url, **kwargs)
+        if resp.status_code == 401 or (resp.status_code == 400 and "auth" in resp.text.lower()):
+            self._auth()
+            resp = self.session.request(method, url, **kwargs)
+        return resp
+
     def get(self, endpoint: str, **kwargs):
-        return self.session.get(f"{self.base_url}/{endpoint.lstrip('/')}", **kwargs)
+        return self._request_with_reauth("GET", endpoint, **kwargs)
 
     def post(self, endpoint: str, **kwargs):
-        return self.session.post(f"{self.base_url}/{endpoint.lstrip('/')}", **kwargs)
+        return self._request_with_reauth("POST", endpoint, **kwargs)
 
     def get_suppliers_grouped(self) -> dict:
         resp = self.get("/api/suppliers")

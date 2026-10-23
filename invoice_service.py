@@ -132,9 +132,15 @@ def resolve_item(
             return None, None
 
 
+import xml.sax.saxutils as xml_escape
+
+
 def build_iiko_xml(
     doc: RawInvoiceDocument, store_id: str, supplier_id: str, matched_items: list
 ) -> str:
+    escaped_doc_num = xml_escape.escape(doc.doc_number)
+    escaped_comment = xml_escape.escape(f"Автоматический импорт ({doc.source_file})")
+
     items_xml = "".join([f"""
         <item>
             <num>{it['num']}</num>
@@ -148,13 +154,13 @@ def build_iiko_xml(
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <document>
-    <incomingDocumentNumber>{doc.doc_number}</incomingDocumentNumber>
+    <incomingDocumentNumber>{escaped_doc_num}</incomingDocumentNumber>
     <incomingDate>{doc.doc_date}</incomingDate>
     <dateIncoming>{doc.doc_date}T12:00:00</dateIncoming>
     <status>NOT_PROCESSED</status>
     <supplier>{supplier_id}</supplier>
     <defaultStore>{store_id}</defaultStore>
-    <comment>Автоматический импорт ({doc.source_file})</comment>
+    <comment>{escaped_comment}</comment>
     <items>{items_xml}
     </items>
 </document>"""
