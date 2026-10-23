@@ -1,0 +1,8 @@
+aiogram
+pyyaml
+requests
+google-genai
+pydantic
+rapidfuzz
+loguru
+pypdf
