@@ -17,17 +17,17 @@ def resolve_store(consignee_address: str) -> tuple[str, str]:
             return s_id, ALLOWED_STORES[s_id]
 
     print("\n" + "!" * 65)
-    print(f"[?] Адрес в накладной: '{consignee_address or 'НЕ УКАЗАН'}'")
-    print("    Выберите точку доставки:")
-    print("    [1] Аэропорт (Ленинградский пр-т, 62)")
-    print("    [2] Октябрьская (Большая Серпуховская, 8/7)")
+    print(f"[?] Invoice consignee address: '{consignee_address or 'NOT SPECIFIED'}'")
+    print("    Select target delivery store:")
+    store_ids = list(ALLOWED_STORES.keys())
+    for idx, s_id in enumerate(store_ids, 1):
+        print(f"    [{idx}] {ALLOWED_STORES[s_id]}")
     print("!" * 65)
 
-    store_ids = list(ALLOWED_STORES.keys())
     choice_map = {str(idx): s_id for idx, s_id in enumerate(store_ids, 1)}
 
     while True:
-        c = input(f"    Ваш выбор (1-{len(store_ids)}): ").strip()
+        c = input(f"    Your choice (1-{len(store_ids)}): ").strip()
         if c in choice_map:
             s_id = choice_map[c]
             return s_id, ALLOWED_STORES[s_id]
@@ -40,20 +40,20 @@ def resolve_supplier(inn: str, store_name: str) -> tuple[str, str]:
     suppliers = client.get_suppliers_grouped()
     candidates = suppliers.get(inn, [])
     if not candidates:
-        raise ValueError(f"Поставщик с ИНН {inn} не заведен в iiko!")
+        raise ValueError(f"Supplier with INN {inn} not registered in iiko!")
 
     if len(candidates) == 1:
         return candidates[0]["id"], candidates[0]["name"]
 
     print("\n" + "!" * 65)
-    print(f"[?] По ИНН {inn} найдено несколько филиалов в iiko (целевая точка: {store_name}):")
+    print(f"[?] Multiple supplier entries found for INN {inn} (target store: {store_name}):")
     for idx, c in enumerate(candidates, 1):
-        dep = f" (точки: {c['dept_codes']})" if c['dept_codes'] else " (все точки)"
+        dep = f" (departments: {c['dept_codes']})" if c['dept_codes'] else " (all departments)"
         print(f"    [{idx}] {c['name']}{dep}")
     print("!" * 65)
 
     while True:
-        c = input(f"    Выберите поставщика (1-{len(candidates)}): ").strip()
+        c = input(f"    Select supplier (1-{len(candidates)}): ").strip()
         if c.isdigit() and 1 <= int(c) <= len(candidates):
             chosen = candidates[int(c) - 1]
             save_preferred_supplier(inn, chosen["id"], chosen["name"])
@@ -65,43 +65,43 @@ def resolve_item(supplier_id: str, raw_name: str, article: str, catalog: list) -
         return consensus["product_id"], consensus["iiko_name"]
 
     if consensus and consensus["has_conflict"]:
-        print(f"\n[⚠️ КОНФЛИКТ В ИСТОРИИ] Позиция: '{raw_name}'")
+        print(f"\n[⚠️ HISTORICAL CONFLICT] Item: '{raw_name}'")
         for idx, var in enumerate(consensus["all_variants"], 1):
             pct = (var[3] / consensus["total_votes"]) * 100
-            print(f"    [{idx}] {var[1]} (арт: {var[2]}) — выбрано {var[3]} раз ({pct:.0f}%)")
-        print("    [0] Искать в каталоге вручную")
-        c = input("    Ваш выбор: ").strip()
+            print(f"    [{idx}] {var[1]} (sku: {var[2]}) — selected {var[3]} times ({pct:.0f}%)")
+        print("    [0] Search catalog manually")
+        c = input("    Select correct variant: ").strip()
         if c.isdigit() and 1 <= int(c) <= len(consensus["all_variants"]):
             chosen = consensus["all_variants"][int(c) - 1]
             record_mapping_vote(supplier_id, raw_name, chosen[0], chosen[1], chosen[2], weight=3)
             return chosen[0], chosen[1]
 
-    print(f"\n[?] НОВЫЙ ТОВАР: '{raw_name}'" + (f" (арт: {article})" if article else ""))
+    print(f"\n[?] NEW ITEM: '{raw_name}'" + (f" (sku: {article})" if article else ""))
     choices = [p["name"] for p in catalog]
     matches = process.extract(raw_name, choices, limit=3, scorer=fuzz.token_sort_ratio)
     name_to_prod = {p["name"]: p for p in catalog}
 
-    print("    Варианты из iiko:")
+    print("    iiko catalog candidates:")
     for idx, (name, score, _) in enumerate(matches, 1):
         p = name_to_prod[name]
-        print(f"    [{idx}] {name} (арт: {p['article']}) [Папка: {p['folder']}] ({score:.0f}%)")
-    print("    [4] Ввести артикул iiko вручную")
-    print("    [0] Пропустить позицию")
+        print(f"    [{idx}] {name} (sku: {p['article']}) [Folder: {p['folder']}] ({score:.0f}%)")
+    print("    [4] Enter iiko SKU manually")
+    print("    [0] Skip item")
 
     while True:
-        ans = input("    Ваш выбор (1-4, 0): ").strip()
+        ans = input("    Your choice (1-4, 0): ").strip()
         if ans in ("1", "2", "3"):
             chosen_name = matches[int(ans) - 1][0]
             prod = name_to_prod[chosen_name]
             record_mapping_vote(supplier_id, raw_name, prod["id"], prod["name"], article or prod["article"], weight=2)
             return prod["id"], prod["name"]
         elif ans == "4":
-            manual = input("    Введите артикул iiko: ").strip()
+            manual = input("    Enter iiko SKU: ").strip()
             for p in catalog:
                 if manual in (p["article"], p["id"]):
                     record_mapping_vote(supplier_id, raw_name, p["id"], p["name"], manual, weight=2)
                     return p["id"], p["name"]
-            print("    Артикул не найден.")
+            print("    SKU not found.")
         elif ans == "0":
             return None, None
 

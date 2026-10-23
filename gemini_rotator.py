@@ -1,4 +1,4 @@
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional, Any
 from google import genai
 from config import cfg
 from storage import record_gemini_key_stat, get_gemini_key_usage_counts
@@ -18,8 +18,8 @@ class GeminiRotator:
         available.sort(key=lambda k: usage.get(k["name"], 0))
         return available
 
-    def execute_interaction(self, input_payload: list) -> str:
-        """Executes LLM call with transparent least-used rotation and 429 auto-failover."""
+    def execute_interaction(self, input_payload: list, schema: Optional[Any] = None) -> str:
+        """Executes LLM call with transparent least-used rotation, 429 failover, and optional structured schema."""
         excluded_keys: Set[str] = set()
         last_error = None
 
@@ -39,14 +39,26 @@ class GeminiRotator:
 
             try:
                 ai_client = genai.Client(api_key=api_key)
-                interaction = ai_client.interactions.create(
-                    model=self.model_name,
-                    input=input_payload,
-                    generation_config={
+
+                create_kwargs = {
+                    'model': self.model_name,
+                    'input': input_payload,
+                    'generation_config': {
                         'max_output_tokens': self.max_output_tokens,
                         'thinking_level': self.thinking_level
                     }
-                )
+                }
+
+                if schema is not None:
+                    # Export Pydantic model to JSON schema dict required by Google Interactions API
+                    json_schema = schema.model_json_schema() if hasattr(schema, "model_json_schema") else schema
+                    create_kwargs['response_format'] = {
+                        'type': 'text',
+                        'mime_type': 'application/json',
+                        'schema': json_schema
+                    }
+
+                interaction = ai_client.interactions.create(**create_kwargs)
 
                 record_gemini_key_stat(key_name, success=True)
                 print(f"[+] [Gemini API] Request succeeded with account '{key_name}'")
