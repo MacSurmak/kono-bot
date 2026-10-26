@@ -94,6 +94,12 @@ def get_item_resolution_kb(
         ])
     rows.append([
         InlineKeyboardButton(
+            text=t("btn_manual_sku"),
+            callback_data=f"inv:manual:{doc_id}:{item_idx}"
+        )
+    ])
+    rows.append([
+        InlineKeyboardButton(
             text=t("btn_skip_item"),
             callback_data=f"inv:skip:{doc_id}:{item_idx}"
         )

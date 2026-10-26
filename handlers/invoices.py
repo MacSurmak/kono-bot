@@ -3,6 +3,8 @@ import uuid
 import asyncio
 from typing import Dict, Any, List
 from aiogram import Router, types, F
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 from rapidfuzz import process, fuzz
 from loguru import logger
 
@@ -11,12 +13,18 @@ from parsers import parse_document
 from config import ALLOWED_STORES
 from iiko_client import client
 from invoice_service import build_iiko_xml
+from item_matcher import find_catalog_candidates
 from storage import (
     get_consensus_mapping,
     record_mapping_vote,
     get_preferred_supplier,
     save_preferred_supplier,
 )
+
+
+class InvoiceState(StatesGroup):
+    waiting_manual_sku = State()
+
 
 router = Router(name="invoices_router")
 
@@ -226,16 +234,13 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
                 "vat": item.vat_rate,
             })
         else:
-            # Generate top 3 catalog suggestions
-            choices = [p["name"] for p in catalog]
-            top_matches = process.extract(item.raw_name, choices, limit=3, scorer=fuzz.token_sort_ratio)
-            name_to_prod = {p["name"]: p for p in catalog}
-
-            candidates = []
-            for name, score, _ in top_matches:
-                p = name_to_prod[name]
-                candidates.append({"id": p["id"], "name": p["name"], "score": score})
-
+            # Generate smart domain-aware candidates using item_matcher
+            candidates = find_catalog_candidates(
+                raw_name=item.raw_name,
+                article=item.article,
+                catalog=catalog,
+                limit=3
+            )
             unresolved_items.append({
                 "item_idx": idx,
                 "item": item,
@@ -263,8 +268,8 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
         await prompt_next_unresolved_item(message, doc_id)
 
 
-async def prompt_next_unresolved_item(message: types.Message, doc_id: str):
-    """Presents the next unaligned item to the operator."""
+async def prompt_next_unresolved_item(message: types.Message, doc_id: str, is_new: bool = False):
+    """Presents the next unaligned item to the operator, either editing or sending a fresh message."""
     session = sessions.get(doc_id)
     if not session or not session["unresolved_items"]:
         return
@@ -275,18 +280,115 @@ async def prompt_next_unresolved_item(message: types.Message, doc_id: str):
     from keyboards.invoices_kb import get_item_resolution_kb
 
     article_info = f"\nАртикул поставщика: <code>{item.article}</code>" if item.article else ""
-    await message.edit_text(
-        t(
-            "invoice_unmatched_item_card",
-            current=current["item_idx"],
-            total=total,
-            raw_name=item.raw_name,
-            article_info=article_info,
-            sum=item.sum,
-            qty=item.quantity,
-        ),
-        reply_markup=get_item_resolution_kb(doc_id, current["item_idx"], current["candidates"])
+    card_text = t(
+        "invoice_unmatched_item_card",
+        current=current["item_idx"],
+        total=total,
+        raw_name=item.raw_name,
+        article_info=article_info,
+        sum=item.sum,
+        qty=item.quantity,
     )
+    markup = get_item_resolution_kb(doc_id, current["item_idx"], current["candidates"])
+
+    if is_new:
+        await message.answer(card_text, reply_markup=markup)
+    else:
+        await message.edit_text(card_text, reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("inv:manual:"))
+async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMContext):
+    """Initiates FSM prompt waiting for manual iiko SKU input from operator."""
+    parts = callback.data.split(":")
+    doc_id, item_idx = parts[2], int(parts[3])
+
+    session = sessions.get(doc_id)
+    if not session or not session["unresolved_items"]:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    current_item = session["unresolved_items"][0]["item"]
+    await state.set_state(InvoiceState.waiting_manual_sku)
+    await state.update_data(doc_id=doc_id, item_idx=item_idx)
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")]]
+    )
+    await callback.message.edit_text(
+        t("invoice_enter_sku_prompt", raw_name=current_item.raw_name),
+        reply_markup=cancel_kb
+    )
+
+
+@router.message(InvoiceState.waiting_manual_sku)
+async def handle_manual_sku_input(message: types.Message, state: FSMContext):
+    """Validates entered SKU against live iiko stock catalog and records consensus mapping."""
+    sku = message.text.strip()
+    data = await state.get_data()
+    doc_id = data.get("doc_id")
+    item_idx = data.get("item_idx")
+
+    session = sessions.get(doc_id)
+    if not session or not session.get("unresolved_items"):
+        await state.clear()
+        await message.answer(t("invoice_session_expired"))
+        return
+
+    catalog = await asyncio.to_thread(client.get_active_stock_products)
+    clean_sku = sku.lower()
+    prod = next(
+        (p for p in catalog if p.get("article", "").strip().lower() == clean_sku or p.get("id", "").strip().lower() == clean_sku),
+        None
+    )
+
+    if not prod:
+        await message.answer(t("invoice_sku_not_found", sku=sku))
+        return
+
+    resolved_entry = session["unresolved_items"].pop(0)
+    item = resolved_entry["item"]
+
+    record_mapping_vote(
+        supplier_id=session["supplier_id"],
+        raw_name=item.raw_name,
+        product_id=prod["id"],
+        iiko_name=prod["name"],
+        article=sku,
+        weight=3
+    )
+    session["matched_items"].append({
+        "num": item_idx,
+        "product_id": prod["id"],
+        "iiko_name": prod["name"],
+        "raw_name": item.raw_name,
+        "amount": item.quantity,
+        "price": item.price,
+        "sum": item.sum,
+        "vat": item.vat_rate,
+    })
+    logger.info(f"Manual SKU match confirmed: '{item.raw_name}' -> '{prod['name']}' (article={sku})")
+
+    await state.clear()
+    await message.answer(t("invoice_sku_matched_success", prod_name=prod["name"], sku=sku))
+
+    if session["unresolved_items"]:
+        await prompt_next_unresolved_item(message, doc_id, is_new=True)
+    else:
+        from keyboards.invoices_kb import get_upload_confirmation_kb
+        await message.answer(
+            t(
+                "invoice_all_matched_card",
+                doc_number=session["parsed_doc"].doc_number or "Б/Н",
+                doc_date=session["parsed_doc"].doc_date,
+                supplier_name=session["supplier_name"],
+                store_name=session["store_name"],
+                total_sum=session["total_sum"],
+                items_count=len(session["matched_items"]),
+            ),
+            reply_markup=get_upload_confirmation_kb(doc_id)
+        )
 
 
 @router.callback_query(F.data.startswith("inv:match:"))
