@@ -72,7 +72,7 @@ def inspect(search_query: str = ""):
     else:
         print("\n🏆 TOP-15 MOST FREQUENT MAPPINGS:")
         cur.execute("""
-            SELECT raw_name, iiko_name, iiko_article, usage_count
+            SELECT raw_name, iiko_name, iiko_article, usage_count, package_coefficient
             FROM supplier_mappings
             ORDER BY usage_count DESC
             LIMIT 15
@@ -82,14 +82,15 @@ def inspect(search_query: str = ""):
     if not rows:
         print("   No records found.")
     else:
-        print(f"{'VOTES':<8} | {'INVOICE RAW NAME':<40} | {'IIKO PRODUCT NAME':<35}")
-        print("-" * 88)
+        print(f"{'VOTES':<8} | {'COEFF':<7} | {'INVOICE RAW NAME':<36} | {'IIKO PRODUCT NAME':<33}")
+        print("-" * 92)
         for r in rows:
             votes = f"x{r[3]}"
-            raw = r[0][:38]
+            coeff = f"x{r[4]:g}" if len(r) > 4 and r[4] and r[4] > 1.0 else "1.0"
+            raw = r[0][:34]
             iiko = f"{r[1]} ({r[2]})" if r[2] else r[1]
-            print(f"{votes:<8} | {raw:<40} | {iiko[:35]:<35}")
-    print("=" * 88)
+            print(f"{votes:<8} | {coeff:<7} | {raw:<36} | {iiko[:33]:<33}")
+    print("=" * 92)
 
     # 4. Gemini key rotation telemetry
     from storage import get_all_gemini_key_stats

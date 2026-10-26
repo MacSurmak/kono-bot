@@ -107,10 +107,10 @@ LEXICON: Dict[str, str] = {
         "🔢 <b>Ручной ввод артикула iiko:</b>\n\n"
         "Товар поставщика:\n"
         "👉 <b>«{raw_name}»</b>\n\n"
-        "Отправьте в чат <b>артикул или код товара</b> из iiko (например, <code>6406</code> или <code>31698</code>):"
+        "Отправьте в чат <b>артикул товара</b> из iiko (например, <code>6406</code> или с фасовкой: <code>6406*100</code>):"
     ),
     "invoice_sku_not_found": "❌ <b>Товар с артикулом «{sku}» не найден в каталоге iiko.</b>\nПроверьте артикул в iikoOffice и попробуйте еще раз:",
-    "invoice_sku_matched_success": "✅ Позиция привязана к <b>«{prod_name}»</b> (артикул: {sku}).",
+    "invoice_sku_matched_success": "✅ Позиция привязана к <b>«{prod_name}»</b> (артикул: {sku}{pack_info}).",
     "invoice_draft_success": (
         "🚀 <b>Черновик накладной успешно создан в iiko!</b>\n\n"
         "• Ресторан: <b>{store_name}</b>\n"

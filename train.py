@@ -245,7 +245,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             })
             continue
 
-        # Check 5: Strict sequential order
+        # Check 5: Strict sequential order with packaging coefficient calculation
         is_sequential = True
         temp_seq = []
         for d_item, i_item in zip(doc.items, iiko_items):
@@ -253,6 +253,18 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             if abs(d_sum - i_item["sum"]) >= 0.50:
                 is_sequential = False
                 break
+
+            # Calculate packaging multiplier (e.g. 6 packs -> 600 pcs = 100.0)
+            d_qty = d_item.quantity
+            i_amount = i_item["amount"]
+            coeff = 1.0
+            if d_qty > 0 and i_amount > 0:
+                ratio = i_amount / d_qty
+                if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
+                    coeff = float(round(ratio))
+                elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
+                    coeff = round(ratio, 2)
+
             temp_seq.append(
                 {
                     "supplier_id": supplier_id,
@@ -260,6 +272,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     "product_id": i_item["product_id"],
                     "iiko_name": i_item["name"],
                     "article": d_item.article or i_item["article"],
+                    "package_coefficient": coeff,
                 }
             )
 
@@ -273,6 +286,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     iiko_name=pair["iiko_name"],
                     article=pair["article"],
                     weight=1,
+                    package_coefficient=pair["package_coefficient"],
                 )
                 learned_items_count += 1
 
@@ -304,6 +318,17 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             for s in unique_sums:
                 d_it = doc_by_sum[s]
                 i_it = iiko_by_sum_row[s]
+
+                d_qty = d_it.quantity
+                i_amount = i_it["amount"]
+                coeff = 1.0
+                if d_qty > 0 and i_amount > 0:
+                    ratio = i_amount / d_qty
+                    if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
+                        coeff = float(round(ratio))
+                    elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
+                        coeff = round(ratio, 2)
+
                 stage2_pairs.append(
                     {
                         "supplier_id": supplier_id,
@@ -311,6 +336,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                         "product_id": i_it["product_id"],
                         "iiko_name": i_it["name"],
                         "article": d_it.article or i_it["article"],
+                        "package_coefficient": coeff,
                     }
                 )
 
@@ -324,6 +350,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                         iiko_name=pair["iiko_name"],
                         article=pair["article"],
                         weight=1,
+                        package_coefficient=pair["package_coefficient"],
                     )
                     learned_items_count += 1
 

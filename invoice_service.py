@@ -139,18 +139,25 @@ def build_iiko_xml(
     doc: RawInvoiceDocument, store_id: str, supplier_id: str, matched_items: list
 ) -> str:
     escaped_doc_num = xml_escape.escape(doc.doc_number)
-    escaped_comment = xml_escape.escape(f"Автоматический импорт ({doc.source_file})")
 
-    items_xml = "".join([f"""
+    item_blocks = []
+    for it in matched_items:
+        coeff = float(it.get("coefficient", 1.0) or 1.0)
+        final_amount = round(it["amount"] * coeff, 4)
+        final_price = round(it["sum"] / final_amount, 4) if final_amount > 0 else it["price"]
+
+        item_blocks.append(f"""
         <item>
             <num>{it['num']}</num>
             <store>{store_id}</store>
             <product>{it['product_id']}</product>
-            <amount>{it['amount']}</amount>
-            <price>{it['price']}</price>
+            <amount>{final_amount}</amount>
+            <price>{final_price}</price>
             <sum>{it['sum']}</sum>
             <vatPercent>{it['vat']}</vatPercent>
-        </item>""" for it in matched_items])
+        </item>""")
+
+    items_xml = "".join(item_blocks)
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <document>
@@ -160,7 +167,7 @@ def build_iiko_xml(
     <status>NOT_PROCESSED</status>
     <supplier>{supplier_id}</supplier>
     <defaultStore>{store_id}</defaultStore>
-    <comment>{escaped_comment}</comment>
+    <comment></comment>
     <items>{items_xml}
     </items>
 </document>"""

@@ -272,12 +272,14 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
     for idx, item in enumerate(parsed_doc.items, 1):
         consensus = get_consensus_mapping(supplier_id, item.raw_name)
         if consensus and not consensus["has_conflict"]:
+            coeff = consensus.get("package_coefficient", 1.0) or 1.0
             matched_items.append({
                 "num": idx,
                 "product_id": consensus["product_id"],
                 "iiko_name": consensus["iiko_name"],
                 "raw_name": item.raw_name,
                 "amount": item.quantity,
+                "coefficient": coeff,
                 "price": item.price,
                 "sum": item.sum,
                 "vat": item.vat_rate,
@@ -373,8 +375,8 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
 
 @router.message(InvoiceState.waiting_manual_sku)
 async def handle_manual_sku_input(message: types.Message, state: FSMContext):
-    """Validates entered SKU against live iiko stock catalog and records consensus mapping."""
-    sku = message.text.strip()
+    """Validates entered SKU (with optional packaging multiplier) against live iiko stock catalog."""
+    raw_input = message.text.strip()
     data = await state.get_data()
     doc_id = data.get("doc_id")
     item_idx = data.get("item_idx")
@@ -384,6 +386,26 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         await state.clear()
         await message.answer(t("invoice_session_expired"))
         return
+
+    # Parse optional packaging multiplier, e.g. "6406*100" or "6406 x100"
+    sku = raw_input
+    coeff = 1.0
+    import re
+    if "*" in raw_input:
+        parts = raw_input.split("*", 1)
+        sku = parts[0].strip()
+        try:
+            coeff = float(parts[1].strip().replace(",", "."))
+        except ValueError:
+            coeff = 1.0
+    elif " x" in raw_input.lower():
+        parts = re.split(r"\s+[xх]\s*", raw_input, flags=re.IGNORECASE)
+        if len(parts) == 2:
+            sku = parts[0].strip()
+            try:
+                coeff = float(parts[1].strip().replace(",", "."))
+            except ValueError:
+                coeff = 1.0
 
     catalog = await asyncio.to_thread(client.get_active_stock_products)
     clean_sku = sku.lower()
@@ -405,7 +427,8 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         product_id=prod["id"],
         iiko_name=prod["name"],
         article=sku,
-        weight=3
+        weight=3,
+        package_coefficient=coeff
     )
     session["matched_items"].append({
         "num": item_idx,
@@ -413,14 +436,16 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         "iiko_name": prod["name"],
         "raw_name": item.raw_name,
         "amount": item.quantity,
+        "coefficient": coeff,
         "price": item.price,
         "sum": item.sum,
         "vat": item.vat_rate,
     })
-    logger.info(f"Manual SKU match confirmed: '{item.raw_name}' -> '{prod['name']}' (article={sku})")
+    logger.info(f"Manual SKU match confirmed: '{item.raw_name}' -> '{prod['name']}' (article={sku}, coeff={coeff})")
 
+    pack_info = f", фасовка x{coeff:g}" if coeff > 1.0 else ""
     await state.clear()
-    await message.answer(t("invoice_sku_matched_success", prod_name=prod["name"], sku=sku))
+    await message.answer(t("invoice_sku_matched_success", prod_name=prod["name"], sku=sku, pack_info=pack_info))
 
     if session["unresolved_items"]:
         await prompt_next_unresolved_item(message, doc_id, is_new=True)

@@ -29,7 +29,7 @@ def init_db():
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # 1. Product mapping consensus table with usage tracking
+        # 1. Product mapping consensus table with usage tracking and packaging coefficient
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS supplier_mappings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,10 +39,17 @@ def init_db():
                 iiko_name TEXT NOT NULL,
                 iiko_article TEXT,
                 usage_count INTEGER DEFAULT 1,
+                package_coefficient REAL NOT NULL DEFAULT 1.0,
                 last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(supplier_id, raw_name, product_id)
             )
         """)
+
+        # Migration: ensure package_coefficient column exists in legacy tables
+        cursor.execute("PRAGMA table_info(supplier_mappings)")
+        mapping_columns = [row[1] for row in cursor.fetchall()]
+        if "package_coefficient" not in mapping_columns:
+            cursor.execute("ALTER TABLE supplier_mappings ADD COLUMN package_coefficient REAL NOT NULL DEFAULT 1.0")
 
         # 2. Preferred suppliers lookup table for disambiguating identical INNs
         cursor.execute("""
@@ -97,17 +104,20 @@ def record_mapping_vote(
     iiko_name: str,
     article: str = "",
     weight: int = 1,
+    package_coefficient: float = 1.0,
 ):
     clean_name = normalize_item_name(raw_name)
+    safe_coeff = float(package_coefficient) if package_coefficient and package_coefficient > 0 else 1.0
     with get_db_connection() as conn:
         conn.execute(
             """
             INSERT INTO supplier_mappings 
-            (supplier_id, raw_name, product_id, iiko_name, iiko_article, usage_count, last_used_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            (supplier_id, raw_name, product_id, iiko_name, iiko_article, usage_count, package_coefficient, last_used_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(supplier_id, raw_name, product_id) 
             DO UPDATE SET 
                 usage_count = usage_count + ?,
+                package_coefficient = excluded.package_coefficient,
                 last_used_at = CURRENT_TIMESTAMP
         """,
             (
@@ -117,6 +127,7 @@ def record_mapping_vote(
                 iiko_name,
                 article,
                 weight,
+                safe_coeff,
                 weight,
             ),
         )
@@ -128,7 +139,7 @@ def get_consensus_mapping(supplier_id: str, raw_name: str) -> Optional[Dict[str,
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT product_id, iiko_name, iiko_article, usage_count
+            SELECT product_id, iiko_name, iiko_article, usage_count, package_coefficient
             FROM supplier_mappings
             WHERE supplier_id = ? AND raw_name = ?
             ORDER BY usage_count DESC, last_used_at DESC
@@ -143,12 +154,14 @@ def get_consensus_mapping(supplier_id: str, raw_name: str) -> Optional[Dict[str,
         total_votes = sum(r[3] for r in rows)
         winner = rows[0]
         confidence = winner[3] / total_votes
+        coeff = winner[4] if len(winner) > 4 and winner[4] else 1.0
 
         return {
             "product_id": winner[0],
             "iiko_name": winner[1],
             "iiko_article": winner[2],
             "votes": winner[3],
+            "package_coefficient": float(coeff),
             "total_votes": total_votes,
             "confidence": confidence,
             "has_conflict": len(rows) > 1 and confidence < 0.75,
