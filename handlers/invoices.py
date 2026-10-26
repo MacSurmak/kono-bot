@@ -481,7 +481,6 @@ async def process_manual_match(callback: types.CallbackQuery):
 
     catalog = client.get_active_stock_products()
     prod = next((p for p in catalog if p["id"] == prod_id), None)
-
     if prod:
         record_mapping_vote(
             supplier_id=session["supplier_id"],
