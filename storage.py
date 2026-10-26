@@ -94,6 +94,26 @@ def init_db():
                 used_at TIMESTAMP
             )
         """)
+
+        # 6. Dynamically managed restaurant delivery stores
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS managed_stores (
+                store_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Seed initial stores from configuration if table is clean
+        cursor.execute("SELECT COUNT(*) FROM managed_stores")
+        if cursor.fetchone()[0] == 0:
+            from config import STORES_CONFIG
+            for s_id, s_data in STORES_CONFIG.items():
+                cursor.execute(
+                    "INSERT INTO managed_stores (store_id, name, is_active) VALUES (?, ?, 1)",
+                    (s_id, s_data["name"])
+                )
         conn.commit()
 
 
@@ -336,6 +356,77 @@ def get_all_bot_users() -> List[Dict[str, Any]]:
             }
             for r in rows
         ]
+
+
+# ================= DYNAMIC STORE & KNOWLEDGE BASE MANAGEMENT =================
+def get_allowed_stores() -> Dict[str, str]:
+    """Returns mapping of active store GUID to restaurant name."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT store_id, name FROM managed_stores WHERE is_active = 1")
+        return {r[0]: r[1] for r in cur.fetchall()}
+
+
+def get_all_managed_stores() -> List[Dict[str, Any]]:
+    """Returns list of all stores registered in database."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT store_id, name, is_active FROM managed_stores ORDER BY name ASC")
+        return [{"store_id": r[0], "name": r[1], "is_active": bool(r[2])} for r in cur.fetchall()]
+
+
+def add_managed_store(store_id: str, name: str) -> None:
+    """Adds or activates a restaurant store."""
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO managed_stores (store_id, name, is_active) VALUES (?, ?, 1)
+            ON CONFLICT(store_id) DO UPDATE SET name = excluded.name, is_active = 1
+        """,
+            (store_id.strip(), name.strip()),
+        )
+
+
+def delete_managed_store(store_id: str) -> None:
+    """Deletes a restaurant store from active managed list."""
+    with get_db_connection() as conn:
+        conn.execute("DELETE FROM managed_stores WHERE store_id = ?", (store_id.strip(),))
+
+
+def search_mappings_for_admin(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Searches knowledge base mappings for inspection or deletion."""
+    with get_db_connection() as conn:
+        conn.create_function("lower", 1, lambda s: s.lower() if s else "")
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, raw_name, iiko_name, iiko_article, usage_count, package_coefficient
+            FROM supplier_mappings
+            WHERE LOWER(raw_name) LIKE ? OR LOWER(iiko_name) LIKE ? OR iiko_article LIKE ?
+            ORDER BY usage_count DESC
+            LIMIT ?
+        """,
+            (f"%{query.lower()}%", f"%{query.lower()}%", f"%{query}%", limit),
+        )
+        return [
+            {
+                "id": r[0],
+                "raw_name": r[1],
+                "iiko_name": r[2],
+                "article": r[3],
+                "usage_count": r[4],
+                "coefficient": r[5],
+            }
+            for r in cur.fetchall()
+        ]
+
+
+def delete_mapping_by_id(mapping_id: int) -> bool:
+    """Deletes an incorrect learned mapping from knowledge base."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM supplier_mappings WHERE id = ?", (mapping_id,))
+        return cur.rowcount > 0
 
 
 if __name__ == "__main__":

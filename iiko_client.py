@@ -107,12 +107,33 @@ class IikoClient:
             )
         return clean_products
 
+    def get_iiko_departments(self) -> list:
+        """Retrieves list of stores and departments from iiko API."""
+        resp = self.get("/api/corporation/departments")
+        if resp.status_code != 200:
+            return []
+        root = ET.fromstring(resp.content)
+        stores = []
+        for dep in root.findall(".//corporateItemDto"):
+            dep_type = dep.findtext("type", "")
+            is_store = dep.findtext("isStore", "false") == "true"
+            name = (dep.findtext("name") or "").strip()
+            if dep_type == "STORE" or is_store or "склад" in name.lower() or "точка" in name.lower():
+                stores.append({
+                    "id": dep.findtext("id"),
+                    "name": name,
+                    "code": (dep.findtext("code") or "").strip(),
+                })
+        return stores
+
     def upload_invoice(self, target_store_id: str, xml_payload: str):
-        # Safety guardrail preventing uploads to unapproved stores
-        if target_store_id not in ALLOWED_STORES:
+        # Safety guardrail dynamically validating against managed stores in database
+        from storage import get_allowed_stores
+        allowed = get_allowed_stores()
+        if target_store_id not in allowed:
             raise PermissionError(
                 f"CRITICAL: Attempted upload to unauthorized store {target_store_id}! "
-                f"Allowed stores: {ALLOWED_STORES}"
+                f"Allowed stores: {allowed}"
             )
 
         headers = {"Content-Type": "application/xml; charset=utf-8"}

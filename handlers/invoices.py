@@ -168,8 +168,10 @@ async def process_store_selection(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
+    from storage import get_allowed_stores
+    allowed_stores = get_allowed_stores()
     session["store_id"] = store_id
-    session["store_name"] = ALLOWED_STORES[store_id]
+    session["store_name"] = allowed_stores.get(store_id, "Точка")
     parsed_doc = session["parsed_doc"]
     logger.info(f"Store selected for Doc #{parsed_doc.doc_number}: '{session['store_name']}' ({store_id})")
 

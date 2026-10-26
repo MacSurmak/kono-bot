@@ -15,21 +15,27 @@ def get_pdf_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
 
 
 def get_store_selection_kb(doc_id: str) -> InlineKeyboardMarkup:
-    """Generates store selection keyboard bound strictly to ALLOWED_STORES."""
-    buttons = []
-    for store_id, store_name in ALLOWED_STORES.items():
-        buttons.append(
+    """Generates dynamic store selection keyboard grouped in responsive rows."""
+    from storage import get_allowed_stores
+    allowed_stores = get_allowed_stores()
+
+    rows = []
+    current_row = []
+    for store_id, store_name in allowed_stores.items():
+        current_row.append(
             InlineKeyboardButton(
                 text=f"🏢 {store_name}",
                 callback_data=f"inv:store:{doc_id}:{store_id}"
             )
         )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            buttons,
-            [InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")]
-        ]
-    )
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+
+    rows.append([InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_supplier_disambiguation_kb(

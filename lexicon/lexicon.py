@@ -52,6 +52,32 @@ LEXICON: Dict[str, str] = {
     "admin_users_title": "👥 <b>Авторизованные пользователи:</b>\n",
     "admin_users_empty": "Список пользователей пуст.",
     "admin_access_denied": "Отказано в доступе.",
+    "admin_btn_stores": "🏬 Управление ресторанами",
+    "admin_btn_mappings": "🗑 Удаление сопоставлений",
+    "admin_stores_title": "🏬 <b>Управление ресторанами сети:</b>\n\nСписок подключенных складов iiko:\n",
+    "admin_stores_empty": "Нет подключенных ресторанов.",
+    "admin_btn_add_store": "➕ Подключить точку",
+    "admin_btn_manual_store": "✏️ Ввести GUID вручную",
+    "admin_store_manual_prompt": (
+        "✏️ <b>Ручное добавление склада iiko:</b>\n\n"
+        "Отправьте GUID и название точки через пробел:\n"
+        "<code>4841e49a-61b4-4f34-b51c-7cfb3ccad7ac ТАГАНКА</code>\n\n"
+        "<i>Для отмены нажмите кнопку ниже.</i>"
+    ),
+    "admin_store_invalid_format": "❌ Неверный формат. Отправьте GUID (36 символов) и название через пробел:",
+    "admin_store_added_success": "✅ Ресторан <b>«{name}»</b> успешно подключен!",
+    "admin_store_deleted_success": "🗑 Склад отключен.",
+    "admin_iiko_stores_available": "🏬 <b>Склады, найденные в iiko:</b>\nВыберите точку для подключения:",
+    "admin_iiko_no_new_stores": "В iiko не найдено новых неподключенных складов. Вы можете ввести GUID вручную.",
+    "admin_search_mapping_prompt": (
+        "🔍 <b>Удаление ошибочных сопоставлений из базы знаний:</b>\n\n"
+        "Отправьте в чат название товара или артикул для поиска:\n"
+        "<i>(например, «перчатки» или «палочки»)</i>"
+    ),
+    "admin_search_mapping_empty": "❌ По запросу «{query}» сопоставлений не найдено.",
+    "admin_search_mapping_results": "🔍 <b>Найдено сопоставлений ({count}):</b>\nНажмите «Удалить» под ошибочной связкой:",
+    "admin_mapping_deleted_success": "✅ Сопоставление удалено из базы знаний!",
+    "admin_btn_back": "⬅️ Назад в админку",
 
     # Invoice Processing UI
     "invoice_parsing_wait": "⏳ <b>Распознаю документ:</b> <code>{filename}</code>...\n<i>Пожалуйста, подождите.</i>",
