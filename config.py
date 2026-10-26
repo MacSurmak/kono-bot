@@ -54,9 +54,10 @@ def load_and_validate_config() -> dict:
     telegram = config.get("telegram")
     if not isinstance(telegram, dict):
         raise ConfigurationError("Missing or invalid 'telegram' section in config.yaml")
-    for field in ("bot_token", "admin_id"):
-        if not telegram.get(field):
-            raise ConfigurationError(f"Missing required telegram parameter: '{field}'")
+    if not telegram.get("bot_token"):
+        raise ConfigurationError("Missing required telegram parameter: 'bot_token'")
+    if not telegram.get("admin_id") and not telegram.get("admin_ids"):
+        raise ConfigurationError("Missing required telegram parameter: 'admin_id' or 'admin_ids'")
 
     return config
 

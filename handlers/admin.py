@@ -37,10 +37,15 @@ ADMIN_ID = int(cfg["telegram"]["admin_id"])
 from lexicon import t
 
 
+from middlewares.auth import get_configured_admin_ids
+
+router = Router(name="admin_router")
+
+
 @router.message(Command("admin"))
 async def handle_admin_panel(message: types.Message):
     """Entrypoint to admin panel for privileged operators."""
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in get_configured_admin_ids():
         return
 
     await message.answer(t("admin_panel_title"), reply_markup=get_admin_main_kb(), parse_mode="HTML")
@@ -49,7 +54,7 @@ async def handle_admin_panel(message: types.Message):
 @router.callback_query(F.data == "admin:create_invite")
 async def process_create_invite(callback: types.CallbackQuery):
     """Generates secure one-time invite deep-link."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
 
@@ -66,7 +71,7 @@ async def process_create_invite(callback: types.CallbackQuery):
 @router.callback_query(F.data == "admin:list_users")
 async def process_list_users(callback: types.CallbackQuery):
     """Displays active registered users."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
 
@@ -87,7 +92,7 @@ async def process_list_users(callback: types.CallbackQuery):
 @router.callback_query(F.data == "admin:back_main")
 async def process_back_main(callback: types.CallbackQuery, state: FSMContext):
     """Returns to admin main menu."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         return
     await state.clear()
     await callback.message.edit_text(t("admin_panel_title"), reply_markup=get_admin_main_kb(), parse_mode="HTML")
@@ -97,7 +102,7 @@ async def process_back_main(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "admin:manage_stores")
 async def process_manage_stores(callback: types.CallbackQuery, state: FSMContext):
     """Displays active managed stores with deletion controls."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
 
@@ -111,10 +116,10 @@ async def process_manage_stores(callback: types.CallbackQuery, state: FSMContext
     await callback.message.edit_text(text, reply_markup=get_admin_stores_kb(stores), parse_mode="HTML")
 
 
-@router.callback_query(F.data.startswith("admin:del_store:"))
+@router.callback_query(F.data.startswith("admin:del_st:"))
 async def process_delete_store(callback: types.CallbackQuery):
     """Removes a store from active managed list."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         return
     store_id = callback.data.split(":")[2]
     delete_managed_store(store_id)
@@ -126,37 +131,41 @@ async def process_delete_store(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_admin_stores_kb(stores), parse_mode="HTML")
 
 
-@router.callback_query(F.data == "admin:add_store")
+@router.callback_query(F.data.startswith("admin:add_st:"))
 async def process_add_store_menu(callback: types.CallbackQuery):
-    """Fetches candidate stores from iiko API for one-click addition."""
-    if callback.from_user.id != ADMIN_ID:
+    """Fetches candidate stores from /api/corporation/stores with pagination."""
+    if callback.from_user.id not in get_configured_admin_ids():
         return
 
+    page = int(callback.data.split(":")[2])
     existing_store_ids = {s["store_id"] for s in get_all_managed_stores()}
-    iiko_deps = client.get_iiko_departments()
-    available_to_add = [d for d in iiko_deps if d["id"] not in existing_store_ids]
+    iiko_stores = client.get_iiko_departments()
+    available_to_add = [d for d in iiko_stores if d["id"] not in existing_store_ids]
 
     if available_to_add:
         await callback.message.edit_text(
             t("admin_iiko_stores_available"),
-            reply_markup=get_iiko_import_stores_kb(available_to_add),
+            reply_markup=get_iiko_import_stores_kb(available_to_add, page=page),
             parse_mode="HTML"
         )
     else:
         await callback.message.edit_text(
             t("admin_iiko_no_new_stores"),
-            reply_markup=get_iiko_import_stores_kb([]),
+            reply_markup=get_iiko_import_stores_kb([], page=0),
             parse_mode="HTML"
         )
 
 
-@router.callback_query(F.data.startswith("admin:store_import:"))
+@router.callback_query(F.data.startswith("admin:st_add:"))
 async def process_store_import(callback: types.CallbackQuery):
-    """Adds a store discovered from iiko API to managed stores."""
-    if callback.from_user.id != ADMIN_ID:
+    """Adds a store discovered from iiko API to managed stores using safe ID lookup."""
+    if callback.from_user.id not in get_configured_admin_ids():
         return
-    parts = callback.data.split(":")
-    store_id, name = parts[2], parts[3]
+    store_id = callback.data.split(":")[2]
+    iiko_stores = client.get_iiko_departments()
+    store = next((s for s in iiko_stores if s["id"] == store_id), None)
+    name = store["name"] if store else "Склад iiko"
+
     add_managed_store(store_id, name)
     logger.info(f"Admin {callback.from_user.id} imported store from iiko: {name} ({store_id})")
     await callback.answer(t("admin_store_added_success", name=name), show_alert=True)
@@ -169,7 +178,7 @@ async def process_store_import(callback: types.CallbackQuery):
 @router.callback_query(F.data == "admin:manual_store_prompt")
 async def process_manual_store_prompt(callback: types.CallbackQuery, state: FSMContext):
     """Sets FSM state waiting for manual store UUID and name."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         return
     await state.set_state(AdminState.waiting_manual_store)
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -182,7 +191,7 @@ async def process_manual_store_prompt(callback: types.CallbackQuery, state: FSMC
 @router.message(AdminState.waiting_manual_store)
 async def handle_manual_store_input(message: types.Message, state: FSMContext):
     """Parses and registers manually entered store GUID and name."""
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in get_configured_admin_ids():
         return
     text = message.text.strip()
     parts = text.split(maxsplit=1)
@@ -202,7 +211,7 @@ async def handle_manual_store_input(message: types.Message, state: FSMContext):
 @router.callback_query(F.data == "admin:manage_mappings")
 async def process_manage_mappings(callback: types.CallbackQuery, state: FSMContext):
     """Prompts admin for search query to locate incorrect mappings."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         return
     await state.set_state(AdminState.waiting_search_mapping)
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -215,7 +224,7 @@ async def process_manage_mappings(callback: types.CallbackQuery, state: FSMConte
 @router.message(AdminState.waiting_search_mapping)
 async def handle_search_mapping_input(message: types.Message, state: FSMContext):
     """Executes search and presents candidates for deletion."""
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in get_configured_admin_ids():
         return
     query = message.text.strip()
     results = search_mappings_for_admin(query, limit=8)
@@ -235,7 +244,7 @@ async def handle_search_mapping_input(message: types.Message, state: FSMContext)
 @router.callback_query(F.data.startswith("admin:del_map:"))
 async def process_delete_mapping(callback: types.CallbackQuery):
     """Permanently deletes chosen mapping record from knowledge base."""
-    if callback.from_user.id != ADMIN_ID:
+    if callback.from_user.id not in get_configured_admin_ids():
         return
     mapping_id = int(callback.data.split(":")[2])
     success = delete_mapping_by_id(mapping_id)
