@@ -4,6 +4,16 @@ from lexicon import t
 from config import ALLOWED_STORES
 
 
+def get_pdf_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
+    """Generates confirmation keyboard for verifying raw OCR output from PDF."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=t("btn_confirm_pdf"), callback_data=f"inv:pdf_ok:{doc_id}")],
+            [InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")],
+        ]
+    )
+
+
 def get_store_selection_kb(doc_id: str) -> InlineKeyboardMarkup:
     """Generates store selection keyboard bound strictly to ALLOWED_STORES."""
     buttons = []

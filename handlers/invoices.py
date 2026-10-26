@@ -86,25 +86,74 @@ async def handle_document_upload(message: types.Message):
             "unresolved_items": [],
         }
 
-        from keyboards.invoices_kb import get_store_selection_kb
-        await status_msg.edit_text(
-            t(
-                "invoice_card",
-                doc_number=parsed_doc.doc_number or "Б/Н",
-                doc_date=parsed_doc.doc_date,
-                supplier_name=parsed_doc.supplier_name,
-                supplier_inn=parsed_doc.supplier_inn,
-                total_sum=total_sum,
-                items_count=len(parsed_doc.items),
-            ),
-            reply_markup=get_store_selection_kb(doc_id)
-        )
+        if ext == ".pdf":
+            # Generate preview of extracted lines for visual verification
+            preview_lines = []
+            for it in parsed_doc.items[:15]:
+                name = it.raw_name[:32]
+                preview_lines.append(f"{it.line_num}. {name} — {it.quantity:.2f} × {it.price:.2f} ₽ = {it.sum:.2f} ₽")
+            if len(parsed_doc.items) > 15:
+                preview_lines.append(f"<i>...и еще {len(parsed_doc.items) - 15} позиций</i>")
+
+            from keyboards.invoices_kb import get_pdf_confirmation_kb
+            await status_msg.edit_text(
+                t(
+                    "pdf_verification_card",
+                    doc_number=parsed_doc.doc_number or "Б/Н",
+                    doc_date=parsed_doc.doc_date,
+                    supplier_name=parsed_doc.supplier_name or "Не определен",
+                    supplier_inn=parsed_doc.supplier_inn or "Не определен",
+                    total_sum=total_sum,
+                    items_count=len(parsed_doc.items),
+                    items_preview="\n".join(preview_lines),
+                ),
+                reply_markup=get_pdf_confirmation_kb(doc_id)
+            )
+        else:
+            from keyboards.invoices_kb import get_store_selection_kb
+            await status_msg.edit_text(
+                t(
+                    "invoice_card",
+                    doc_number=parsed_doc.doc_number or "Б/Н",
+                    doc_date=parsed_doc.doc_date,
+                    supplier_name=parsed_doc.supplier_name,
+                    supplier_inn=parsed_doc.supplier_inn,
+                    total_sum=total_sum,
+                    items_count=len(parsed_doc.items),
+                ),
+                reply_markup=get_store_selection_kb(doc_id)
+            )
 
     except Exception as e:
         if os.path.exists(temp_path):
             os.remove(temp_path)
         sessions.pop(doc_id, None)
         await status_msg.edit_text(t("invoice_parsing_error", error=str(e)))
+
+
+@router.callback_query(F.data.startswith("inv:pdf_ok:"))
+async def process_pdf_confirmation(callback: types.CallbackQuery):
+    """Handles operator approval of raw OCR extraction and advances to store selection."""
+    doc_id = callback.data.split(":")[2]
+    session = sessions.get(doc_id)
+    if not session:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    parsed_doc = session["parsed_doc"]
+    from keyboards.invoices_kb import get_store_selection_kb
+    await callback.message.edit_text(
+        t(
+            "invoice_card",
+            doc_number=parsed_doc.doc_number or "Б/Н",
+            doc_date=parsed_doc.doc_date,
+            supplier_name=parsed_doc.supplier_name,
+            supplier_inn=parsed_doc.supplier_inn,
+            total_sum=session["total_sum"],
+            items_count=len(parsed_doc.items),
+        ),
+        reply_markup=get_store_selection_kb(doc_id)
+    )
 
 
 @router.callback_query(F.data.startswith("inv:store:"))

@@ -57,6 +57,15 @@ LEXICON: Dict[str, str] = {
     "invoice_parsing_wait": "⏳ <b>Распознаю документ:</b> <code>{filename}</code>...\n<i>Пожалуйста, подождите.</i>",
     "invoice_parsing_error": "❌ <b>Ошибка при разборе документа:</b>\n<code>{error}</code>",
     "invoice_invalid_format": "⚠️ <b>Неподдерживаемый формат файла.</b>\nПринимаются только файлы <b>.xml</b> (Диадок) и <b>.pdf</b>.",
+    "pdf_verification_card": (
+        "🔍 <b>Результат распознавания PDF (Gemini Vision):</b>\n\n"
+        "📄 Документ: № <code>{doc_number}</code> от {doc_date}\n"
+        "🏢 Поставщик: <b>{supplier_name}</b> (ИНН: <code>{supplier_inn}</code>)\n"
+        "💰 Итоговая сумма: <b>{total_sum:,.2f} ₽</b> ({items_count} поз.)\n\n"
+        "📋 <b>Извлеченные строки:</b>\n"
+        "{items_preview}\n\n"
+        "<i>Всё распознано правильно?</i>"
+    ),
     "invoice_card": (
         "📄 <b>Накладная:</b> № <code>{doc_number}</code> от {doc_date}\n"
         "🏢 <b>Поставщик:</b> {supplier_name} (ИНН: <code>{supplier_inn}</code>)\n"
@@ -121,6 +130,7 @@ LEXICON: Dict[str, str] = {
     "btn_create_draft": "🚀 Загрузить черновик в iiko",
     "btn_skip_item": "⏭ Пропустить позицию",
     "btn_manual_sku": "🔢 Ввести артикул вручную",
+    "btn_confirm_pdf": "✅ Всё верно, продолжить",
 }
 
 LEXICON_COMMANDS: Dict[str, str] = {
