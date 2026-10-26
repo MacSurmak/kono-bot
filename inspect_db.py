@@ -58,7 +58,7 @@ def inspect(search_query: str = ""):
         print(f"\n🔍 SEARCH RESULTS FOR QUERY: '{search_query}'")
         cur.execute(
             """
-            SELECT raw_name, iiko_name, iiko_article, usage_count
+            SELECT raw_name, iiko_name, iiko_article, usage_count, package_coefficient
             FROM supplier_mappings
             WHERE LOWER(raw_name) LIKE ? OR LOWER(iiko_name) LIKE ? OR iiko_article LIKE ?
             ORDER BY usage_count DESC

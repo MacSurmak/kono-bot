@@ -107,8 +107,19 @@ LEXICON: Dict[str, str] = {
         "🔢 <b>Ручной ввод артикула iiko:</b>\n\n"
         "Товар поставщика:\n"
         "👉 <b>«{raw_name}»</b>\n\n"
-        "Отправьте в чат <b>артикул товара</b> из iiko (например, <code>6406</code> или с фасовкой: <code>6406*100</code>):"
+        "Отправьте в чат <b>артикул или код товара</b> из iiko (например, <code>6406</code> или <code>31698</code>):"
     ),
+    "invoice_packaging_prompt": (
+        "📦 <b>Укажите фасовку для товара:</b>\n"
+        "«{prod_name}» (арт. <code>{sku}</code>)\n\n"
+        "В накладной поставщика: <b>{qty:g}</b> ед.\n"
+        "👉 <i>Сколько штук iiko содержится в 1 единице поставщика?</i>"
+    ),
+    "invoice_custom_coeff_prompt": (
+        "✏️ <b>Введите числовой коэффициент фасовки:</b>\n\n"
+        "Сколько базовых штук iiko в одной упаковке? (Например: <code>12</code>, <code>24</code> или <code>150</code>):"
+    ),
+    "invoice_custom_coeff_invalid": "❌ Введите корректное положительное число (например, 24 или 100):",
     "invoice_sku_not_found": "❌ <b>Товар с артикулом «{sku}» не найден в каталоге iiko.</b>\nПроверьте артикул в iikoOffice и попробуйте еще раз:",
     "invoice_sku_matched_success": "✅ Позиция привязана к <b>«{prod_name}»</b> (артикул: {sku}{pack_info}).",
     "invoice_draft_success": (
@@ -131,6 +142,7 @@ LEXICON: Dict[str, str] = {
     "btn_skip_item": "⏭ Пропустить позицию",
     "btn_manual_sku": "🔢 Ввести артикул вручную",
     "btn_confirm_pdf": "✅ Всё верно, продолжить",
+    "btn_custom_coeff": "✏️ Другое число",
 }
 
 LEXICON_COMMANDS: Dict[str, str] = {

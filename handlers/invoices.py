@@ -24,6 +24,7 @@ from storage import (
 
 class InvoiceState(StatesGroup):
     waiting_manual_sku = State()
+    waiting_custom_coeff = State()
 
 
 router = Router(name="invoices_router")
@@ -375,8 +376,8 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
 
 @router.message(InvoiceState.waiting_manual_sku)
 async def handle_manual_sku_input(message: types.Message, state: FSMContext):
-    """Validates entered SKU (with optional packaging multiplier) against live iiko stock catalog."""
-    raw_input = message.text.strip()
+    """Validates entered SKU against live catalog and transitions to packaging multiplier selection."""
+    sku = message.text.strip()
     data = await state.get_data()
     doc_id = data.get("doc_id")
     item_idx = data.get("item_idx")
@@ -386,26 +387,6 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         await state.clear()
         await message.answer(t("invoice_session_expired"))
         return
-
-    # Parse optional packaging multiplier, e.g. "6406*100" or "6406 x100"
-    sku = raw_input
-    coeff = 1.0
-    import re
-    if "*" in raw_input:
-        parts = raw_input.split("*", 1)
-        sku = parts[0].strip()
-        try:
-            coeff = float(parts[1].strip().replace(",", "."))
-        except ValueError:
-            coeff = 1.0
-    elif " x" in raw_input.lower():
-        parts = re.split(r"\s+[xх]\s*", raw_input, flags=re.IGNORECASE)
-        if len(parts) == 2:
-            sku = parts[0].strip()
-            try:
-                coeff = float(parts[1].strip().replace(",", "."))
-            except ValueError:
-                coeff = 1.0
 
     catalog = await asyncio.to_thread(client.get_active_stock_products)
     clean_sku = sku.lower()
@@ -418,6 +399,116 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         await message.answer(t("invoice_sku_not_found", sku=sku))
         return
 
+    await state.clear()
+    current_item = session["unresolved_items"][0]["item"]
+    from keyboards.invoices_kb import get_packaging_coeff_kb
+    await message.answer(
+        t(
+            "invoice_packaging_prompt",
+            prod_name=prod["name"],
+            sku=prod.get("article", sku),
+            qty=current_item.quantity,
+        ),
+        reply_markup=get_packaging_coeff_kb(doc_id, item_idx, prod["id"])
+    )
+
+
+@router.callback_query(F.data.startswith("inv:match:"))
+async def process_manual_match(callback: types.CallbackQuery):
+    """Transitions selected candidate to packaging multiplier selection."""
+    parts = callback.data.split(":")
+    doc_id, item_idx, prod_id = parts[2], int(parts[3]), parts[4]
+
+    session = sessions.get(doc_id)
+    if not session or not session["unresolved_items"]:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    catalog = client.get_active_stock_products()
+    prod = next((p for p in catalog if p["id"] == prod_id), None)
+    if not prod:
+        return
+
+    current_item = session["unresolved_items"][0]["item"]
+    from keyboards.invoices_kb import get_packaging_coeff_kb
+    await callback.message.edit_text(
+        t(
+            "invoice_packaging_prompt",
+            prod_name=prod["name"],
+            sku=prod.get("article", "Б/А"),
+            qty=current_item.quantity,
+        ),
+        reply_markup=get_packaging_coeff_kb(doc_id, item_idx, prod["id"])
+    )
+
+
+@router.callback_query(F.data.startswith("inv:coeff:"))
+async def process_coeff_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Handles packaging multiplier choice or prompts for custom number."""
+    parts = callback.data.split(":")
+    doc_id, item_idx, prod_id, coeff_val = parts[2], int(parts[3]), parts[4], parts[5]
+
+    if coeff_val == "custom":
+        await state.set_state(InvoiceState.waiting_custom_coeff)
+        await state.update_data(doc_id=doc_id, item_idx=item_idx, prod_id=prod_id)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")]]
+        )
+        await callback.message.edit_text(t("invoice_custom_coeff_prompt"), reply_markup=cancel_kb)
+        return
+
+    try:
+        coeff = float(coeff_val)
+    except ValueError:
+        coeff = 1.0
+
+    await apply_confirmed_item_match(callback, doc_id, item_idx, prod_id, coeff, is_new=False)
+
+
+@router.message(InvoiceState.waiting_custom_coeff)
+async def handle_custom_coeff_input(message: types.Message, state: FSMContext):
+    """Validates custom numeric multiplier and applies item alignment."""
+    raw_val = message.text.strip().replace(",", ".")
+    try:
+        coeff = float(raw_val)
+        if coeff <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer(t("invoice_custom_coeff_invalid"))
+        return
+
+    data = await state.get_data()
+    await state.clear()
+    await apply_confirmed_item_match(
+        message, data["doc_id"], data["item_idx"], data["prod_id"], coeff, is_new=True
+    )
+
+
+async def apply_confirmed_item_match(
+    target_event: types.Message | types.CallbackQuery,
+    doc_id: str,
+    item_idx: int,
+    prod_id: str,
+    coeff: float,
+    is_new: bool = False
+):
+    """Applies verified alignment, saves persistent consensus vote, and advances workflow."""
+    session = sessions.get(doc_id)
+    target_msg = target_event if isinstance(target_event, types.Message) else target_event.message
+
+    if not session or not session.get("unresolved_items"):
+        if is_new:
+            await target_msg.answer(t("invoice_session_expired"))
+        else:
+            await target_msg.edit_text(t("invoice_session_expired"))
+        return
+
+    catalog = await asyncio.to_thread(client.get_active_stock_products)
+    prod = next((p for p in catalog if p["id"] == prod_id), None)
+    if not prod:
+        return
+
     resolved_entry = session["unresolved_items"].pop(0)
     item = resolved_entry["item"]
 
@@ -426,7 +517,7 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         raw_name=item.raw_name,
         product_id=prod["id"],
         iiko_name=prod["name"],
-        article=sku,
+        article=prod.get("article", item.article),
         weight=3,
         package_coefficient=coeff
     )
@@ -441,72 +532,21 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         "sum": item.sum,
         "vat": item.vat_rate,
     })
-    logger.info(f"Manual SKU match confirmed: '{item.raw_name}' -> '{prod['name']}' (article={sku}, coeff={coeff})")
+    logger.info(f"Item alignment confirmed: '{item.raw_name}' -> '{prod['name']}' (coeff={coeff})")
 
     pack_info = f", фасовка x{coeff:g}" if coeff > 1.0 else ""
-    await state.clear()
-    await message.answer(t("invoice_sku_matched_success", prod_name=prod["name"], sku=sku, pack_info=pack_info))
+    success_text = t("invoice_sku_matched_success", prod_name=prod["name"], sku=prod.get("article", ""), pack_info=pack_info)
+
+    if is_new:
+        await target_msg.answer(success_text)
+    else:
+        await target_msg.edit_text(success_text)
 
     if session["unresolved_items"]:
-        await prompt_next_unresolved_item(message, doc_id, is_new=True)
+        await prompt_next_unresolved_item(target_msg, doc_id, is_new=True)
     else:
         from keyboards.invoices_kb import get_upload_confirmation_kb
-        await message.answer(
-            t(
-                "invoice_all_matched_card",
-                doc_number=session["parsed_doc"].doc_number or "Б/Н",
-                doc_date=session["parsed_doc"].doc_date,
-                supplier_name=session["supplier_name"],
-                store_name=session["store_name"],
-                total_sum=session["total_sum"],
-                items_count=len(session["matched_items"]),
-            ),
-            reply_markup=get_upload_confirmation_kb(doc_id)
-        )
-
-
-@router.callback_query(F.data.startswith("inv:match:"))
-async def process_manual_match(callback: types.CallbackQuery):
-    """Records operator alignment vote into knowledge base."""
-    parts = callback.data.split(":")
-    doc_id, item_idx, prod_id = parts[2], int(parts[3]), parts[4]
-
-    session = sessions.get(doc_id)
-    if not session or not session["unresolved_items"]:
-        await callback.message.edit_text(t("invoice_session_expired"))
-        return
-
-    resolved_entry = session["unresolved_items"].pop(0)
-    item = resolved_entry["item"]
-
-    catalog = client.get_active_stock_products()
-    prod = next((p for p in catalog if p["id"] == prod_id), None)
-    if prod:
-        record_mapping_vote(
-            supplier_id=session["supplier_id"],
-            raw_name=item.raw_name,
-            product_id=prod["id"],
-            iiko_name=prod["name"],
-            article=item.article or prod["article"],
-            weight=2
-        )
-        logger.info(f"Recorded manual mapping vote: '{item.raw_name}' -> '{prod['name']}' (supplier_id={session['supplier_id']})")
-        session["matched_items"].append({
-            "num": item_idx,
-            "product_id": prod["id"],
-            "iiko_name": prod["name"],
-            "raw_name": item.raw_name,
-            "amount": item.quantity,
-            "price": item.price,
-            "sum": item.sum,
-            "vat": item.vat_rate,
-        })
-
-    if session["unresolved_items"]:
-        await prompt_next_unresolved_item(callback.message, doc_id)
-    else:
-        from keyboards.invoices_kb import get_upload_confirmation_kb
-        await callback.message.edit_text(
+        await target_msg.answer(
             t(
                 "invoice_all_matched_card",
                 doc_number=session["parsed_doc"].doc_number or "Б/Н",

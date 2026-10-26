@@ -88,6 +88,32 @@ def get_upload_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def get_packaging_coeff_kb(
+    doc_id: str, item_idx: int, prod_id: str
+) -> InlineKeyboardMarkup:
+    """Generates explicit packaging multiplier choices."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="x1 (1 к 1)", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:1"),
+                InlineKeyboardButton(text="x10", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:10"),
+                InlineKeyboardButton(text="x20", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:20"),
+            ],
+            [
+                InlineKeyboardButton(text="x50", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:50"),
+                InlineKeyboardButton(text="x100", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:100"),
+                InlineKeyboardButton(text="x500", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:500"),
+            ],
+            [
+                InlineKeyboardButton(text=t("btn_custom_coeff"), callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:custom"),
+            ],
+            [
+                InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"),
+            ],
+        ]
+    )
+
+
 def get_item_resolution_kb(
     doc_id: str, item_idx: int, candidates: List[Dict[str, Any]]
 ) -> InlineKeyboardMarkup:
