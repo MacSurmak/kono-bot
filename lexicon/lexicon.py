@@ -46,9 +46,26 @@ LEXICON: Dict[str, str] = {
         "<code>{invite_url}</code>\n\n"
         "<i>Ссылка одноразовая. Отправьте её сотруднику для авторизации в боте.</i>"
     ),
-    "admin_users_title": "👥 <b>Авторизованные пользователи:</b>\n",
+    "admin_users_title": "👥 <b>Список сотрудников:</b>\n\nВыберите пользователя для управления ролью и доступом:",
     "admin_users_empty": "Список пользователей пуст.",
     "admin_access_denied": "Отказано в доступе.",
+    "admin_btn_back_users": "⬅️ Назад к списку сотрудников",
+    "admin_user_card_title": (
+        "👤 <b>Карточка сотрудника:</b>\n\n"
+        "• Имя: <b>{full_name}</b> ({username})\n"
+        "• Telegram ID: <code>{telegram_id}</code>\n"
+        "• Роль: <b>{role_str}</b>\n"
+        "• Доступ: <b>{status_str}</b>\n"
+        "• Логин iiko: <code>{iiko_login}</code>\n"
+        "• Склад по умолчанию: <b>{default_store}</b>"
+    ),
+    "admin_btn_promote": "👑 Сделать администратором",
+    "admin_btn_demote": "👤 Разжаловать в операторы",
+    "admin_btn_block": "🚫 Заблокировать доступ",
+    "admin_btn_unblock": "🟢 Разблокировать доступ",
+    "admin_role_updated": "✅ Роль сотрудника успешно обновлена!",
+    "admin_status_updated": "✅ Статус доступа обновлен!",
+    "admin_cannot_modify_primary": "⛔ Запрещено разжаловать или блокировать первичного администратора сети.",
     "admin_btn_stores": "🏬 Управление ресторанами",
     "admin_btn_mappings": "🗑 Удаление сопоставлений",
     "admin_stores_title": "🏬 <b>Управление ресторанами сети:</b>\n\nСписок подключенных складов iiko:\n",

@@ -229,6 +229,44 @@ async def update_user_default_store(telegram_id: int, store_id: Optional[str]) -
     )
 
 
+async def set_user_role(telegram_id: int, role: str) -> None:
+    """Updates user authorization role in database."""
+    pool = get_db_pool()
+    await pool.execute(
+        "UPDATE bot_users SET role = $2 WHERE telegram_id = $1;",
+        telegram_id,
+        role.strip(),
+    )
+
+
+async def set_user_active(telegram_id: int, is_active: bool) -> None:
+    """Blocks or activates user access."""
+    pool = get_db_pool()
+    await pool.execute(
+        "UPDATE bot_users SET is_active = $2 WHERE telegram_id = $1;",
+        telegram_id,
+        is_active,
+    )
+
+
+async def is_admin_user(telegram_id: int) -> bool:
+    """Determines if user is an administrator via primary config or active DB role."""
+    from config import get_admin_ids
+
+    # Primary bootstrap admin from config.yaml is permanently privileged
+    if telegram_id in get_admin_ids():
+        return True
+
+    pool = get_db_pool()
+    row = await pool.fetchrow(
+        "SELECT role, is_active FROM bot_users WHERE telegram_id = $1;",
+        telegram_id,
+    )
+    if not row:
+        return False
+    return row["role"] == "admin" and bool(row["is_active"])
+
+
 async def get_all_bot_users() -> List[Dict[str, Any]]:
     pool = get_db_pool()
     rows = await pool.fetch("""

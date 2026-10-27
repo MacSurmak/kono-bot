@@ -16,7 +16,8 @@ async def handle_start(message: types.Message, command: CommandObject):
     if not user:
         return
 
-    is_admin = user.id in get_admin_ids()
+    from storage import is_admin_user
+    is_admin = await is_admin_user(user.id)
 
     # Handle deep-linking invite token: /start inv_<token>
     if command.args and command.args.startswith("inv_"):
@@ -60,7 +61,8 @@ async def handle_start(message: types.Message, command: CommandObject):
 async def handle_menu_command(message: types.Message):
     """Displays main interactive menu via command."""
     user = message.from_user
-    is_admin = user.id in get_admin_ids() if user else False
+    from storage import is_admin_user
+    is_admin = await is_admin_user(user.id) if user else False
     await message.answer(
         t("menu_main_title"),
         reply_markup=get_main_menu_kb(is_admin=is_admin),

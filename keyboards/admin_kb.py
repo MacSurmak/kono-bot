@@ -2,6 +2,75 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from lexicon import t
 
 
+from typing import List, Dict, Any, Optional
+
+
+def get_admin_users_list_kb(users: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Constructs interactive list of users allowing selection for role management."""
+    rows = []
+    for u in users:
+        t_id = u["telegram_id"]
+        name = u["full_name"][:20]
+        badge = "👑 " if u["role"] == "admin" else "👤 "
+        status = "" if u["is_active"] else " [БЛОК]"
+        rows.append([
+            InlineKeyboardButton(
+                text=f"{badge}{name}{status}",
+                callback_data=f"admin:user_card:{t_id}",
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(
+            text=t("admin_btn_back"), callback_data="admin:back_main"
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_user_manage_card_kb(
+    target_id: int, current_role: str, is_active: bool, is_primary_admin: bool
+) -> InlineKeyboardMarkup:
+    """Constructs user management controls (role promotion/demotion, access toggle)."""
+    rows = []
+    if not is_primary_admin:
+        if current_role == "admin":
+            rows.append([
+                InlineKeyboardButton(
+                    text=t("admin_btn_demote"),
+                    callback_data=f"admin:set_role:{target_id}:operator",
+                )
+            ])
+        else:
+            rows.append([
+                InlineKeyboardButton(
+                    text=t("admin_btn_promote"),
+                    callback_data=f"admin:set_role:{target_id}:admin",
+                )
+            ])
+
+        if is_active:
+            rows.append([
+                InlineKeyboardButton(
+                    text=t("admin_btn_block"),
+                    callback_data=f"admin:set_active:{target_id}:0",
+                )
+            ])
+        else:
+            rows.append([
+                InlineKeyboardButton(
+                    text=t("admin_btn_unblock"),
+                    callback_data=f"admin:set_active:{target_id}:1",
+                )
+            ])
+
+    rows.append([
+        InlineKeyboardButton(
+            text=t("admin_btn_back_users"), callback_data="admin:list_users"
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def get_admin_main_kb() -> InlineKeyboardMarkup:
     """Constructs admin control panel inline buttons without hardcoded text."""
     return InlineKeyboardMarkup(
