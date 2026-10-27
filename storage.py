@@ -142,49 +142,6 @@ async def init_db() -> asyncpg.Pool:
                 );
             """)
 
-            # Seed default stores if table is currently unpopulated
-            store_count = await conn.fetchval("SELECT COUNT(*) FROM managed_stores;")
-            if store_count == 0:
-                default_stores = [
-                    (
-                        "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac",
-                        "АЭРОПОРТ",
-                        json.dumps(
-                            [
-                                "аэропорт",
-                                "ленинградский",
-                                "ленинградка",
-                                "д. 62",
-                                "дом 62",
-                            ]
-                        ),
-                    ),
-                    (
-                        "62b795dd-f0e2-4d3b-b354-5ff194b8dcd9",
-                        "ОКТЯБРЬСКАЯ",
-                        json.dumps(
-                            [
-                                "октябрьская",
-                                "серпуховская",
-                                "замоскворечье",
-                                "8/7",
-                                "большая серпуховская",
-                            ]
-                        ),
-                    ),
-                ]
-                for s_id, s_name, s_kw in default_stores:
-                    await conn.execute(
-                        """
-                        INSERT INTO managed_stores (store_id, name, keywords, is_active)
-                        VALUES ($1, $2, $3::jsonb, TRUE)
-                    """,
-                        s_id,
-                        s_name,
-                        s_kw,
-                    )
-                logger.info("Seeded default managed restaurant stores into PostgreSQL.")
-
     logger.info("PostgreSQL schema validated and initialized successfully.")
     return _POOL
 
