@@ -270,7 +270,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                 is_sequential = False
                 break
 
-            # Calculate packaging multiplier (e.g. 6 packs -> 600 pcs = 100.0)
+            # Calculate packaging multiplier (integer packs, metric 0.001, or fractional)
             d_qty = d_item.quantity
             i_amount = i_item["amount"]
             coeff = 1.0
@@ -278,8 +278,20 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                 ratio = i_amount / d_qty
                 if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
                     coeff = float(round(ratio))
+                elif abs(ratio - 0.001) < 0.00001:
+                    coeff = 0.001
+                elif abs(ratio - 0.01) < 0.0001:
+                    coeff = 0.01
+                elif abs(ratio - 0.1) < 0.001:
+                    coeff = 0.1
+                elif abs(ratio - 0.5) < 0.001:
+                    coeff = 0.5
+                elif abs(ratio - 0.25) < 0.001:
+                    coeff = 0.25
                 elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
                     coeff = round(ratio, 2)
+                else:
+                    coeff = round(ratio, 4)
 
             temp_seq.append(
                 {
@@ -346,8 +358,20 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     ratio = i_amount / d_qty
                     if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
                         coeff = float(round(ratio))
+                    elif abs(ratio - 0.001) < 0.00001:
+                        coeff = 0.001
+                    elif abs(ratio - 0.01) < 0.0001:
+                        coeff = 0.01
+                    elif abs(ratio - 0.1) < 0.001:
+                        coeff = 0.1
+                    elif abs(ratio - 0.5) < 0.001:
+                        coeff = 0.5
+                    elif abs(ratio - 0.25) < 0.001:
+                        coeff = 0.25
                     elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
                         coeff = round(ratio, 2)
+                    else:
+                        coeff = round(ratio, 4)
 
                 stage2_pairs.append(
                     {

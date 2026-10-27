@@ -2,7 +2,7 @@ import os
 import hashlib
 import requests
 import xml.etree.ElementTree as ET
-from config import cfg, ALLOWED_STORES
+from config import cfg
 
 iiko_cfg = cfg["iiko"]
 BASE_URL = iiko_cfg["base_url"].rstrip("/")

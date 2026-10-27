@@ -152,7 +152,7 @@ LEXICON: Dict[str, str] = {
         "• Статус: <code>NOT_PROCESSED</code> (черновик)\n\n"
         "<i>Документ ожидает финальной проверки и проведения в iikoOffice.</i>"
     ),
-    "invoice_upload_failed": "❌ <b>Ошибка при загрузке накладной в iiko:</b>\n<code>{error}</code>",
+    "invoice_upload_failed": "❌ <b>Ошибка при загрузке накладной в iiko:</b>\n<code>{error}</code>\n\n<i>Сессия сохранена. Вы можете повторить попытку после проверки связи.</i>",
     "invoice_cancelled": "❌ <b>Обработка накладной отменена.</b> Временные файлы удалены.",
     "invoice_session_expired": "⚠️ Сессия обработки документа устарела. Отправьте файл заново.",
     # Buttons
@@ -160,10 +160,13 @@ LEXICON: Dict[str, str] = {
     "btn_october": "🏢 ОКТЯБРЬСКАЯ",
     "btn_cancel": "❌ Отмена",
     "btn_create_draft": "🚀 Загрузить черновик в iiko",
+    "btn_retry_upload": "🔄 Повторить загрузку в iiko",
     "btn_skip_item": "⏭ Пропустить позицию",
     "btn_manual_sku": "🔢 Ввести артикул вручную",
     "btn_confirm_pdf": "✅ Всё верно, продолжить",
     "btn_custom_coeff": "✏️ Другое число",
+    "btn_coeff_metric_gram": "x0.001 (г → кг / мл → л)",
+    "btn_coeff_half": "x0.5",
 }
 
 LEXICON_COMMANDS: Dict[str, str] = {

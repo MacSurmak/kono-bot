@@ -121,10 +121,28 @@ def get_upload_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def get_upload_retry_kb(doc_id: str) -> InlineKeyboardMarkup:
+    """Generates keyboard to retry failed iiko upload without destroying session."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("btn_retry_upload"), callback_data=f"inv:upload:{doc_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+                )
+            ],
+        ]
+    )
+
+
 def get_packaging_coeff_kb(
     doc_id: str, item_idx: int, prod_id: str
 ) -> InlineKeyboardMarkup:
-    """Generates explicit packaging multiplier choices."""
+    """Generates explicit packaging multiplier choices including fractional and metric units."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -153,6 +171,16 @@ def get_packaging_coeff_kb(
                 InlineKeyboardButton(
                     text="x500",
                     callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:500",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_coeff_metric_gram"),
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:0.001",
+                ),
+                InlineKeyboardButton(
+                    text=t("btn_coeff_half"),
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:0.5",
                 ),
             ],
             [

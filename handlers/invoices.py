@@ -1,7 +1,8 @@
 import os
 import uuid
+import time
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from aiogram import Router, types, F
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -9,8 +10,8 @@ from rapidfuzz import process, fuzz
 from loguru import logger
 
 from lexicon import t
+from models import RawInvoiceDocument
 from parsers import parse_document
-from config import ALLOWED_STORES
 from iiko_client import client
 from invoice_service import build_iiko_xml
 from item_matcher import find_catalog_candidates
@@ -19,6 +20,11 @@ from storage import (
     record_mapping_vote,
     get_preferred_supplier,
     save_preferred_supplier,
+    get_allowed_stores,
+    get_managed_stores_with_keywords,
+    save_invoice_session,
+    get_invoice_session,
+    delete_invoice_session,
 )
 
 
@@ -29,7 +35,6 @@ class InvoiceState(StatesGroup):
 
 router = Router(name="invoices_router")
 
-# In-memory document processing sessions
 TMP_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "data",
@@ -38,12 +43,45 @@ TMP_DIR = os.path.join(
 )
 os.makedirs(TMP_DIR, exist_ok=True)
 
-sessions: Dict[str, Dict[str, Any]] = {}
+# Cache containers for iiko catalog and suppliers to prevent network throttling
+_CATALOG_CACHE: Dict[str, Any] = {"timestamp": 0.0, "data": []}
+_SUPPLIERS_CACHE: Dict[str, Any] = {"timestamp": 0.0, "data": {}}
+_CACHE_LOCK = asyncio.Lock()
+CACHE_TTL = 600.0  # 10 minutes
+
+# Per-document mutex locks to eliminate race conditions on simultaneous button taps
+_DOC_LOCKS: Dict[str, asyncio.Lock] = {}
 
 
-def cleanup_session(doc_id: str) -> None:
-    """Removes temporary session state and local file artifact."""
-    session = sessions.pop(doc_id, None)
+def get_doc_lock(doc_id: str) -> asyncio.Lock:
+    if doc_id not in _DOC_LOCKS:
+        _DOC_LOCKS[doc_id] = asyncio.Lock()
+    return _DOC_LOCKS[doc_id]
+
+
+async def get_cached_catalog() -> list:
+    async with _CACHE_LOCK:
+        now = time.monotonic()
+        if not _CATALOG_CACHE["data"] or (now - _CATALOG_CACHE["timestamp"] > CACHE_TTL):
+            catalog = await asyncio.to_thread(client.get_active_stock_products)
+            _CATALOG_CACHE["data"] = catalog
+            _CATALOG_CACHE["timestamp"] = now
+        return _CATALOG_CACHE["data"]
+
+
+async def get_cached_suppliers() -> dict:
+    async with _CACHE_LOCK:
+        now = time.monotonic()
+        if not _SUPPLIERS_CACHE["data"] or (now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL):
+            suppliers = await asyncio.to_thread(client.get_suppliers_grouped)
+            _SUPPLIERS_CACHE["data"] = suppliers
+            _SUPPLIERS_CACHE["timestamp"] = now
+        return _SUPPLIERS_CACHE["data"]
+
+
+def cleanup_session_data(doc_id: str) -> None:
+    """Removes persistent session record and associated local disk artifact."""
+    session = get_invoice_session(doc_id)
     if session and "file_path" in session:
         file_path = session["file_path"]
         if os.path.exists(file_path):
@@ -51,6 +89,8 @@ def cleanup_session(doc_id: str) -> None:
                 os.remove(file_path)
             except OSError:
                 pass
+    delete_invoice_session(doc_id)
+    _DOC_LOCKS.pop(doc_id, None)
 
 
 @router.message(F.document)
@@ -84,8 +124,29 @@ async def handle_document_upload(message: types.Message):
             f"Document parsed successfully: Doc #{parsed_doc.doc_number}, supplier='{parsed_doc.supplier_name}', items={len(parsed_doc.items)}, total={total_sum:.2f} RUB"
         )
 
-        sessions[doc_id] = {
-            "parsed_doc": parsed_doc,
+        session_data = {
+            "doc_id": doc_id,
+            "user_id": message.from_user.id,
+            "parsed_doc": {
+                "doc_number": parsed_doc.doc_number,
+                "doc_date": parsed_doc.doc_date,
+                "supplier_inn": parsed_doc.supplier_inn,
+                "supplier_name": parsed_doc.supplier_name,
+                "consignee_address": parsed_doc.consignee_address,
+                "source_file": temp_path,
+                "items": [
+                    {
+                        "line_num": it.line_num,
+                        "raw_name": it.raw_name,
+                        "article": it.article,
+                        "quantity": it.quantity,
+                        "price": it.price,
+                        "sum": it.sum,
+                        "vat_rate": it.vat_rate,
+                    }
+                    for it in parsed_doc.items
+                ],
+            },
             "file_path": temp_path,
             "total_sum": total_sum,
             "store_id": None,
@@ -95,6 +156,7 @@ async def handle_document_upload(message: types.Message):
             "matched_items": [],
             "unresolved_items": [],
         }
+        save_invoice_session(doc_id, message.from_user.id, session_data)
 
         if ext == ".pdf":
             # Generate preview of extracted lines for visual verification
@@ -142,8 +204,12 @@ async def handle_document_upload(message: types.Message):
 
     except Exception as e:
         if os.path.exists(temp_path):
-            os.remove(temp_path)
-        sessions.pop(doc_id, None)
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+        delete_invoice_session(doc_id)
+        logger.exception(f"Document parsing error for '{filename}': {e}")
         await status_msg.edit_text(t("invoice_parsing_error", error=str(e)))
 
 
@@ -151,7 +217,7 @@ async def handle_document_upload(message: types.Message):
 async def process_pdf_confirmation(callback: types.CallbackQuery):
     """Handles operator approval of raw OCR extraction and advances to store selection."""
     doc_id = callback.data.split(":")[2]
-    session = sessions.get(doc_id)
+    session = get_invoice_session(doc_id)
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
@@ -162,12 +228,12 @@ async def process_pdf_confirmation(callback: types.CallbackQuery):
     await callback.message.edit_text(
         t(
             "invoice_card",
-            doc_number=parsed_doc.doc_number or "Б/Н",
-            doc_date=parsed_doc.doc_date,
-            supplier_name=parsed_doc.supplier_name,
-            supplier_inn=parsed_doc.supplier_inn,
+            doc_number=parsed_doc.get("doc_number") or "Б/Н",
+            doc_date=parsed_doc.get("doc_date", ""),
+            supplier_name=parsed_doc.get("supplier_name", ""),
+            supplier_inn=parsed_doc.get("supplier_inn", ""),
             total_sum=session["total_sum"],
-            items_count=len(parsed_doc.items),
+            items_count=len(parsed_doc.get("items", [])),
         ),
         reply_markup=get_store_selection_kb(doc_id),
     )
@@ -179,37 +245,44 @@ async def process_store_selection(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     doc_id, store_id = parts[2], parts[3]
 
-    session = sessions.get(doc_id)
+    session = get_invoice_session(doc_id)
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    from storage import get_allowed_stores
-
     allowed_stores = get_allowed_stores()
+    if store_id not in allowed_stores:
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
     session["store_id"] = store_id
-    session["store_name"] = allowed_stores.get(store_id, "Точка")
+    session["store_name"] = allowed_stores[store_id]
     parsed_doc = session["parsed_doc"]
+    save_invoice_session(doc_id, callback.from_user.id, session)
+
     logger.info(
-        f"Store selected for Doc #{parsed_doc.doc_number}: '{session['store_name']}' ({store_id})"
+        f"Store selected for Doc #{parsed_doc.get('doc_number')}: '{session['store_name']}' ({store_id})"
     )
 
-    # 1. Resolve Supplier
-    pref = get_preferred_supplier(parsed_doc.supplier_inn)
+    # Resolve Supplier via INN preference or directory
+    supplier_inn = (parsed_doc.get("supplier_inn") or "").strip()
+    pref = get_preferred_supplier(supplier_inn) if supplier_inn else None
+
     if pref:
         session["supplier_id"], session["supplier_name"] = pref[0], pref[1]
+        save_invoice_session(doc_id, callback.from_user.id, session)
     else:
-        suppliers_grouped = client.get_suppliers_grouped()
-        candidates = suppliers_grouped.get(parsed_doc.supplier_inn, [])
+        suppliers_grouped = await get_cached_suppliers()
+        candidates = suppliers_grouped.get(supplier_inn, []) if supplier_inn else []
 
         if not candidates:
-            # Fallback: fuzzy search supplier by name across entire iiko registry
             all_suppliers = [
                 s for supp_list in suppliers_grouped.values() for s in supp_list
             ]
             supp_names = [s["name"] for s in all_suppliers]
+            raw_supp_name = parsed_doc.get("supplier_name", "")
             top_matches = process.extract(
-                parsed_doc.supplier_name,
+                raw_supp_name,
                 supp_names,
                 limit=4,
                 scorer=fuzz.token_sort_ratio,
@@ -230,8 +303,8 @@ async def process_store_selection(callback: types.CallbackQuery):
                 await callback.message.edit_text(
                     t(
                         "invoice_supplier_not_found_fuzzy",
-                        inn=parsed_doc.supplier_inn or "Не указан",
-                        raw_name=parsed_doc.supplier_name,
+                        inn=supplier_inn or "Не указан",
+                        raw_name=raw_supp_name,
                     ),
                     reply_markup=get_fuzzy_supplier_kb(doc_id, fuzzy_candidates),
                 )
@@ -240,21 +313,22 @@ async def process_store_selection(callback: types.CallbackQuery):
                 await callback.message.edit_text(
                     t(
                         "invoice_supplier_none_matched",
-                        raw_name=parsed_doc.supplier_name,
-                        inn=parsed_doc.supplier_inn or "Не указан",
+                        raw_name=raw_supp_name,
+                        inn=supplier_inn or "Не указан",
                     )
                 )
-                cleanup_session(doc_id)
+                cleanup_session_data(doc_id)
                 return
 
         if len(candidates) == 1:
             session["supplier_id"] = candidates[0]["id"]
             session["supplier_name"] = candidates[0]["name"]
+            save_invoice_session(doc_id, callback.from_user.id, session)
         else:
             from keyboards.invoices_kb import get_supplier_disambiguation_kb
 
             await callback.message.edit_text(
-                t("invoice_supplier_conflict", inn=parsed_doc.supplier_inn),
+                t("invoice_supplier_conflict", inn=supplier_inn),
                 reply_markup=get_supplier_disambiguation_kb(doc_id, candidates),
             )
             return
@@ -268,42 +342,45 @@ async def process_supplier_disambiguation(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     doc_id, supp_id = parts[2], parts[3]
 
-    session = sessions.get(doc_id)
+    session = get_invoice_session(doc_id)
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    suppliers_grouped = client.get_suppliers_grouped()
+    suppliers_grouped = await get_cached_suppliers()
     all_suppliers = [s for supp_list in suppliers_grouped.values() for s in supp_list]
     chosen = next((c for c in all_suppliers if c["id"] == supp_id), None)
 
     if chosen:
-        inn_to_save = session["parsed_doc"].supplier_inn or "CUSTOM"
-        save_preferred_supplier(inn_to_save, chosen["id"], chosen["name"])
+        supplier_inn = (session["parsed_doc"].get("supplier_inn") or "").strip()
+        # Strictly save preference ONLY if valid non-empty INN exists
+        if supplier_inn:
+            save_preferred_supplier(supplier_inn, chosen["id"], chosen["name"])
+            logger.info(
+                f"Associated supplier preference: INN={supplier_inn} -> '{chosen['name']}' ({chosen['id']})"
+            )
         session["supplier_id"] = chosen["id"]
         session["supplier_name"] = chosen["name"]
-        logger.info(
-            f"Associated supplier preference: INN={inn_to_save} -> '{chosen['name']}' ({chosen['id']})"
-        )
+        save_invoice_session(doc_id, callback.from_user.id, session)
 
     await proceed_with_item_alignment(callback.message, doc_id)
 
 
 async def proceed_with_item_alignment(message: types.Message, doc_id: str):
     """Executes item matching against knowledge base and active stock catalog."""
-    session = sessions.get(doc_id)
+    session = get_invoice_session(doc_id)
     if not session:
         return
 
-    catalog = client.get_active_stock_products()
+    catalog = await get_cached_catalog()
     supplier_id = session["supplier_id"]
-    parsed_doc = session["parsed_doc"]
+    parsed_items = session["parsed_doc"].get("items", [])
 
     matched_items = []
     unresolved_items = []
 
-    for idx, item in enumerate(parsed_doc.items, 1):
-        consensus = get_consensus_mapping(supplier_id, item.raw_name)
+    for idx, item in enumerate(parsed_items, 1):
+        consensus = get_consensus_mapping(supplier_id, item["raw_name"])
         if consensus and not consensus["has_conflict"]:
             coeff = consensus.get("package_coefficient", 1.0) or 1.0
             matched_items.append(
@@ -311,18 +388,17 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
                     "num": idx,
                     "product_id": consensus["product_id"],
                     "iiko_name": consensus["iiko_name"],
-                    "raw_name": item.raw_name,
-                    "amount": item.quantity,
+                    "raw_name": item["raw_name"],
+                    "amount": item["quantity"],
                     "coefficient": coeff,
-                    "price": item.price,
-                    "sum": item.sum,
-                    "vat": item.vat_rate,
+                    "price": item["price"],
+                    "sum": item["sum"],
+                    "vat": item["vat_rate"],
                 }
             )
         else:
-            # Generate smart domain-aware candidates using item_matcher
             candidates = find_catalog_candidates(
-                raw_name=item.raw_name, article=item.article, catalog=catalog, limit=3
+                raw_name=item["raw_name"], article=item.get("article", ""), catalog=catalog, limit=3
             )
             unresolved_items.append(
                 {"item_idx": idx, "item": item, "candidates": candidates}
@@ -330,6 +406,7 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
 
     session["matched_items"] = matched_items
     session["unresolved_items"] = unresolved_items
+    save_invoice_session(doc_id, session["user_id"], session)
 
     if not unresolved_items:
         from keyboards.invoices_kb import get_upload_confirmation_kb
@@ -337,8 +414,8 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
         await message.edit_text(
             t(
                 "invoice_all_matched_card",
-                doc_number=parsed_doc.doc_number or "Б/Н",
-                doc_date=parsed_doc.doc_date,
+                doc_number=session["parsed_doc"].get("doc_number") or "Б/Н",
+                doc_date=session["parsed_doc"].get("doc_date", ""),
                 supplier_name=session["supplier_name"],
                 store_name=session["store_name"],
                 total_sum=session["total_sum"],
@@ -353,27 +430,26 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
 async def prompt_next_unresolved_item(
     message: types.Message, doc_id: str, is_new: bool = False
 ):
-    """Presents the next unaligned item to the operator, either editing or sending a fresh message."""
-    session = sessions.get(doc_id)
-    if not session or not session["unresolved_items"]:
+    """Presents the next unaligned item to the operator."""
+    session = get_invoice_session(doc_id)
+    if not session or not session.get("unresolved_items"):
         return
 
     current = session["unresolved_items"][0]
     item = current["item"]
-    total = len(session["parsed_doc"].items)
+    total = len(session["parsed_doc"].get("items", []))
     from keyboards.invoices_kb import get_item_resolution_kb
 
-    article_info = (
-        f"\nАртикул поставщика: <code>{item.article}</code>" if item.article else ""
-    )
+    article_val = item.get("article", "")
+    article_info = f"\nАртикул поставщика: <code>{article_val}</code>" if article_val else ""
     card_text = t(
         "invoice_unmatched_item_card",
         current=current["item_idx"],
         total=total,
-        raw_name=item.raw_name,
+        raw_name=item["raw_name"],
         article_info=article_info,
-        sum=item.sum,
-        qty=item.quantity,
+        sum=item["sum"],
+        qty=item["quantity"],
     )
     markup = get_item_resolution_kb(doc_id, current["item_idx"], current["candidates"])
 
@@ -389,12 +465,19 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
     parts = callback.data.split(":")
     doc_id, item_idx = parts[2], int(parts[3])
 
-    session = sessions.get(doc_id)
-    if not session or not session["unresolved_items"]:
+    session = get_invoice_session(doc_id)
+    if not session or not session.get("unresolved_items"):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    current_item = session["unresolved_items"][0]["item"]
+    target_entry = next(
+        (it for it in session["unresolved_items"] if it["item_idx"] == item_idx), None
+    )
+    if not target_entry:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    current_item = target_entry["item"]
     await state.set_state(InvoiceState.waiting_manual_sku)
     await state.update_data(doc_id=doc_id, item_idx=item_idx)
 
@@ -410,7 +493,7 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
         ]
     )
     await callback.message.edit_text(
-        t("invoice_enter_sku_prompt", raw_name=current_item.raw_name),
+        t("invoice_enter_sku_prompt", raw_name=current_item["raw_name"]),
         reply_markup=cancel_kb,
     )
 
@@ -423,13 +506,21 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
     doc_id = data.get("doc_id")
     item_idx = data.get("item_idx")
 
-    session = sessions.get(doc_id)
+    session = get_invoice_session(doc_id)
     if not session or not session.get("unresolved_items"):
         await state.clear()
         await message.answer(t("invoice_session_expired"))
         return
 
-    catalog = await asyncio.to_thread(client.get_active_stock_products)
+    target_entry = next(
+        (it for it in session["unresolved_items"] if it["item_idx"] == item_idx), None
+    )
+    if not target_entry:
+        await state.clear()
+        await message.answer(t("invoice_session_expired"))
+        return
+
+    catalog = await get_cached_catalog()
     clean_sku = sku.lower()
     prod = next(
         (
@@ -446,7 +537,7 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         return
 
     await state.clear()
-    current_item = session["unresolved_items"][0]["item"]
+    current_item = target_entry["item"]
     from keyboards.invoices_kb import get_packaging_coeff_kb
 
     await message.answer(
@@ -454,7 +545,7 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
             "invoice_packaging_prompt",
             prod_name=prod["name"],
             sku=prod.get("article", sku),
-            qty=current_item.quantity,
+            qty=current_item["quantity"],
         ),
         reply_markup=get_packaging_coeff_kb(doc_id, item_idx, prod["id"]),
     )
@@ -466,17 +557,25 @@ async def process_manual_match(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     doc_id, item_idx, prod_id = parts[2], int(parts[3]), parts[4]
 
-    session = sessions.get(doc_id)
-    if not session or not session["unresolved_items"]:
+    session = get_invoice_session(doc_id)
+    if not session or not session.get("unresolved_items"):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    catalog = client.get_active_stock_products()
-    prod = next((p for p in catalog if p["id"] == prod_id), None)
-    if not prod:
+    target_entry = next(
+        (it for it in session["unresolved_items"] if it["item_idx"] == item_idx), None
+    )
+    if not target_entry:
+        await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    current_item = session["unresolved_items"][0]["item"]
+    catalog = await get_cached_catalog()
+    prod = next((p for p in catalog if p["id"] == prod_id), None)
+    if not prod:
+        await callback.answer(t("invoice_sku_not_found", sku=prod_id), show_alert=True)
+        return
+
+    current_item = target_entry["item"]
     from keyboards.invoices_kb import get_packaging_coeff_kb
 
     await callback.message.edit_text(
@@ -484,7 +583,7 @@ async def process_manual_match(callback: types.CallbackQuery):
             "invoice_packaging_prompt",
             prod_name=prod["name"],
             sku=prod.get("article", "Б/А"),
-            qty=current_item.quantity,
+            qty=current_item["quantity"],
         ),
         reply_markup=get_packaging_coeff_kb(doc_id, item_idx, prod["id"]),
     )
@@ -553,84 +652,98 @@ async def apply_confirmed_item_match(
     is_new: bool = False,
 ):
     """Applies verified alignment, saves persistent consensus vote, and advances workflow."""
-    session = sessions.get(doc_id)
     target_msg = (
         target_event
         if isinstance(target_event, types.Message)
         else target_event.message
     )
 
-    if not session or not session.get("unresolved_items"):
-        if is_new:
-            await target_msg.answer(t("invoice_session_expired"))
-        else:
-            await target_msg.edit_text(t("invoice_session_expired"))
-        return
+    doc_lock = get_doc_lock(doc_id)
+    async with doc_lock:
+        session = get_invoice_session(doc_id)
+        if not session or not session.get("unresolved_items"):
+            if is_new:
+                await target_msg.answer(t("invoice_session_expired"))
+            else:
+                await target_msg.edit_text(t("invoice_session_expired"))
+            return
 
-    catalog = await asyncio.to_thread(client.get_active_stock_products)
-    prod = next((p for p in catalog if p["id"] == prod_id), None)
-    if not prod:
-        return
-
-    resolved_entry = session["unresolved_items"].pop(0)
-    item = resolved_entry["item"]
-
-    record_mapping_vote(
-        supplier_id=session["supplier_id"],
-        raw_name=item.raw_name,
-        product_id=prod["id"],
-        iiko_name=prod["name"],
-        article=prod.get("article", item.article),
-        weight=3,
-        package_coefficient=coeff,
-    )
-    session["matched_items"].append(
-        {
-            "num": item_idx,
-            "product_id": prod["id"],
-            "iiko_name": prod["name"],
-            "raw_name": item.raw_name,
-            "amount": item.quantity,
-            "coefficient": coeff,
-            "price": item.price,
-            "sum": item.sum,
-            "vat": item.vat_rate,
-        }
-    )
-    logger.info(
-        f"Item alignment confirmed: '{item.raw_name}' -> '{prod['name']}' (coeff={coeff})"
-    )
-
-    pack_info = f", фасовка x{coeff:g}" if coeff > 1.0 else ""
-    success_text = t(
-        "invoice_sku_matched_success",
-        prod_name=prod["name"],
-        sku=prod.get("article", ""),
-        pack_info=pack_info,
-    )
-
-    if is_new:
-        await target_msg.answer(success_text)
-    else:
-        await target_msg.edit_text(success_text)
-
-    if session["unresolved_items"]:
-        await prompt_next_unresolved_item(target_msg, doc_id, is_new=True)
-    else:
-        from keyboards.invoices_kb import get_upload_confirmation_kb
-
-        await target_msg.answer(
-            t(
-                "invoice_all_matched_card",
-                doc_number=session["parsed_doc"].doc_number or "Б/Н",
-                doc_date=session["parsed_doc"].doc_date,
-                supplier_name=session["supplier_name"],
-                store_name=session["store_name"],
-                total_sum=session["total_sum"],
-                items_count=len(session["matched_items"]),
-            ),
-            reply_markup=get_upload_confirmation_kb(doc_id),
+        target_idx_entry = next(
+            (idx for idx, it in enumerate(session["unresolved_items"]) if it["item_idx"] == item_idx),
+            None,
         )
+        if target_idx_entry is None:
+            if is_new:
+                await target_msg.answer(t("invoice_session_expired"))
+            else:
+                await target_msg.edit_text(t("invoice_session_expired"))
+            return
+
+        catalog = await get_cached_catalog()
+        prod = next((p for p in catalog if p["id"] == prod_id), None)
+        if not prod:
+            return
+
+        resolved_entry = session["unresolved_items"].pop(target_idx_entry)
+        item = resolved_entry["item"]
+
+        record_mapping_vote(
+            supplier_id=session["supplier_id"],
+            raw_name=item["raw_name"],
+            product_id=prod["id"],
+            iiko_name=prod["name"],
+            article=prod.get("article", item.get("article", "")),
+            weight=3,
+            package_coefficient=coeff,
+        )
+        session["matched_items"].append(
+            {
+                "num": item_idx,
+                "product_id": prod["id"],
+                "iiko_name": prod["name"],
+                "raw_name": item["raw_name"],
+                "amount": item["quantity"],
+                "coefficient": coeff,
+                "price": item["price"],
+                "sum": item["sum"],
+                "vat": item["vat_rate"],
+            }
+        )
+        save_invoice_session(doc_id, session["user_id"], session)
+        logger.info(
+            f"Item alignment confirmed: '{item['raw_name']}' -> '{prod['name']}' (coeff={coeff})"
+        )
+
+        pack_info = f", фасовка x{coeff:g}" if coeff != 1.0 else ""
+        success_text = t(
+            "invoice_sku_matched_success",
+            prod_name=prod["name"],
+            sku=prod.get("article", ""),
+            pack_info=pack_info,
+        )
+
+        if is_new:
+            await target_msg.answer(success_text)
+        else:
+            await target_msg.edit_text(success_text)
+
+        if session["unresolved_items"]:
+            await prompt_next_unresolved_item(target_msg, doc_id, is_new=True)
+        else:
+            from keyboards.invoices_kb import get_upload_confirmation_kb
+
+            await target_msg.answer(
+                t(
+                    "invoice_all_matched_card",
+                    doc_number=session["parsed_doc"].get("doc_number") or "Б/Н",
+                    doc_date=session["parsed_doc"].get("doc_date", ""),
+                    supplier_name=session["supplier_name"],
+                    store_name=session["store_name"],
+                    total_sum=session["total_sum"],
+                    items_count=len(session["matched_items"]),
+                ),
+                reply_markup=get_upload_confirmation_kb(doc_id),
+            )
 
 
 @router.callback_query(F.data.startswith("inv:skip:"))
@@ -638,50 +751,75 @@ async def process_skip_item(callback: types.CallbackQuery):
     """Skips unmatched item without creating an alignment record."""
     parts = callback.data.split(":")
     doc_id = parts[2]
+    item_idx = int(parts[3]) if len(parts) > 3 else None
 
-    session = sessions.get(doc_id)
-    if not session or not session["unresolved_items"]:
-        await callback.message.edit_text(t("invoice_session_expired"))
-        return
+    doc_lock = get_doc_lock(doc_id)
+    async with doc_lock:
+        session = get_invoice_session(doc_id)
+        if not session or not session.get("unresolved_items"):
+            await callback.message.edit_text(t("invoice_session_expired"))
+            return
 
-    session["unresolved_items"].pop(0)
-    if session["unresolved_items"]:
-        await prompt_next_unresolved_item(callback.message, doc_id)
-    else:
-        from keyboards.invoices_kb import get_upload_confirmation_kb
+        if item_idx is not None:
+            session["unresolved_items"] = [
+                it for it in session["unresolved_items"] if it["item_idx"] != item_idx
+            ]
+        else:
+            session["unresolved_items"].pop(0)
 
-        await callback.message.edit_text(
-            t(
-                "invoice_all_matched_card",
-                doc_number=session["parsed_doc"].doc_number or "Б/Н",
-                doc_date=session["parsed_doc"].doc_date,
-                supplier_name=session["supplier_name"],
-                store_name=session["store_name"],
-                total_sum=session["total_sum"],
-                items_count=len(session["matched_items"]),
-            ),
-            reply_markup=get_upload_confirmation_kb(doc_id),
-        )
+        save_invoice_session(doc_id, session["user_id"], session)
+
+        if session["unresolved_items"]:
+            await prompt_next_unresolved_item(callback.message, doc_id)
+        else:
+            from keyboards.invoices_kb import get_upload_confirmation_kb
+
+            await callback.message.edit_text(
+                t(
+                    "invoice_all_matched_card",
+                    doc_number=session["parsed_doc"].get("doc_number") or "Б/Н",
+                    doc_date=session["parsed_doc"].get("doc_date", ""),
+                    supplier_name=session["supplier_name"],
+                    store_name=session["store_name"],
+                    total_sum=session["total_sum"],
+                    items_count=len(session["matched_items"]),
+                ),
+                reply_markup=get_upload_confirmation_kb(doc_id),
+            )
 
 
 @router.callback_query(F.data.startswith("inv:upload:"))
 async def process_draft_upload(callback: types.CallbackQuery):
-    """Builds escaped XML and uploads draft invoice to iiko."""
+    """Builds escaped XML and uploads draft invoice to iiko asynchronously."""
     doc_id = callback.data.split(":")[2]
-    session = sessions.get(doc_id)
+    session = get_invoice_session(doc_id)
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
+    from keyboards.invoices_kb import get_upload_retry_kb
+
     try:
+        # Reconstruct typed DTO for pure builder
+        raw_doc = RawInvoiceDocument(
+            doc_number=session["parsed_doc"].get("doc_number", ""),
+            doc_date=session["parsed_doc"].get("doc_date", ""),
+            supplier_inn=session["parsed_doc"].get("supplier_inn", ""),
+            supplier_name=session["parsed_doc"].get("supplier_name", ""),
+            consignee_address=session["parsed_doc"].get("consignee_address", ""),
+            items=[],
+        )
+
         xml_payload = build_iiko_xml(
-            doc=session["parsed_doc"],
+            doc=raw_doc,
             store_id=session["store_id"],
             supplier_id=session["supplier_id"],
             matched_items=session["matched_items"],
         )
 
-        resp = client.upload_invoice(session["store_id"], xml_payload)
+        resp = await asyncio.to_thread(
+            client.upload_invoice, session["store_id"], xml_payload
+        )
         import xml.etree.ElementTree as ET
 
         if resp.status_code == 200 and "valid>true" in resp.text:
@@ -689,14 +827,15 @@ async def process_draft_upload(callback: types.CallbackQuery):
                 ET.fromstring(resp.content).findtext("documentNumber") or "Создан"
             )
             logger.info(
-                f"Draft invoice created in iiko: #{iiko_doc_num} (incoming: #{session['parsed_doc'].doc_number}) for store '{session['store_name']}'"
+                f"Draft invoice created in iiko: #{iiko_doc_num} (incoming: #{raw_doc.doc_number}) for store '{session['store_name']}'"
             )
+            cleanup_session_data(doc_id)
             await callback.message.edit_text(
                 t(
                     "invoice_draft_success",
                     store_name=session["store_name"],
                     iiko_doc_num=iiko_doc_num,
-                    inc_doc_num=session["parsed_doc"].doc_number or "Б/Н",
+                    inc_doc_num=raw_doc.doc_number or "Б/Н",
                 )
             )
         else:
@@ -704,19 +843,21 @@ async def process_draft_upload(callback: types.CallbackQuery):
                 f"iiko upload rejected: {resp.status_code} - {resp.text[:300]}"
             )
             await callback.message.edit_text(
-                t("invoice_upload_failed", error=resp.text[:300])
+                t("invoice_upload_failed", error=resp.text[:300]),
+                reply_markup=get_upload_retry_kb(doc_id),
             )
 
     except Exception as e:
         logger.exception(f"Unexpected error while uploading invoice to iiko: {e}")
-        await callback.message.edit_text(t("invoice_upload_failed", error=str(e)))
-    finally:
-        cleanup_session(doc_id)
+        await callback.message.edit_text(
+            t("invoice_upload_failed", error=str(e)),
+            reply_markup=get_upload_retry_kb(doc_id),
+        )
 
 
 @router.callback_query(F.data.startswith("inv:cancel:"))
 async def process_invoice_cancel(callback: types.CallbackQuery):
     """Cancels invoice processing and deletes local temporary artifacts."""
     doc_id = callback.data.split(":")[2]
-    cleanup_session(doc_id)
+    cleanup_session_data(doc_id)
     await callback.message.edit_text(t("invoice_cancelled"))

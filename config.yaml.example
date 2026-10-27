@@ -1,0 +1,19 @@
+iiko:
+  base_url: "https://your-chain.iiko.it:443/resto"
+  login: "api_user"
+  password: "api_password"
+
+gemini:
+  model: "gemini-2.5-flash"
+  thinking_level: "low"
+  max_output_tokens: 8192
+  keys:
+    - name: "account_primary"
+      api_key: "AIzaSy..."
+    - name: "account_backup"
+      api_key: "AIzaSy..."
+
+telegram:
+  bot_token: "1234567890:ABCdef..."
+  admin_ids:
+    - 123456789

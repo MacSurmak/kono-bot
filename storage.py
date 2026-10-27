@@ -102,20 +102,48 @@ def init_db():
             CREATE TABLE IF NOT EXISTS managed_stores (
                 store_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                keywords TEXT NOT NULL DEFAULT '[]',
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        # Seed initial stores from configuration if table is clean
+        # Migration: ensure keywords column exists
+        cursor.execute("PRAGMA table_info(managed_stores)")
+        store_columns = [row[1] for row in cursor.fetchall()]
+        if "keywords" not in store_columns:
+            cursor.execute("ALTER TABLE managed_stores ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]'")
+
+        # 7. Persistent invoice processing sessions
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS invoice_sessions (
+                doc_id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                state_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Seed initial default stores if table is clean
         cursor.execute("SELECT COUNT(*) FROM managed_stores")
         if cursor.fetchone()[0] == 0:
-            from config import STORES_CONFIG
-
-            for s_id, s_data in STORES_CONFIG.items():
+            default_stores = [
+                (
+                    "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac",
+                    "АЭРОПОРТ",
+                    '["аэропорт", "ленинградский", "ленинградка", "д. 62", "дом 62"]',
+                ),
+                (
+                    "62b795dd-f0e2-4d3b-b354-5ff194b8dcd9",
+                    "ОКТЯБРЬСКАЯ",
+                    '["октябрьская", "серпуховская", "замоскворечье", "8/7", "большая серпуховская"]',
+                ),
+            ]
+            for s_id, s_name, s_kw in default_stores:
                 cursor.execute(
-                    "INSERT INTO managed_stores (store_id, name, is_active) VALUES (?, ?, 1)",
-                    (s_id, s_data["name"]),
+                    "INSERT INTO managed_stores (store_id, name, keywords, is_active) VALUES (?, ?, ?, 1)",
+                    (s_id, s_name, s_kw),
                 )
         conn.commit()
 
@@ -374,6 +402,25 @@ def get_allowed_stores() -> Dict[str, str]:
         return {r[0]: r[1] for r in cur.fetchall()}
 
 
+def get_managed_stores_with_keywords() -> List[Dict[str, Any]]:
+    """Returns active stores with parsed keyword lists for address detection."""
+    import json
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT store_id, name, keywords FROM managed_stores WHERE is_active = 1"
+        )
+        results = []
+        for r in cur.fetchall():
+            try:
+                kw = json.loads(r[2]) if r[2] else []
+            except Exception:
+                kw = []
+            results.append({"store_id": r[0], "name": r[1], "keywords": kw})
+        return results
+
+
 def get_all_managed_stores() -> List[Dict[str, Any]]:
     """Returns list of all stores registered in database."""
     with get_db_connection() as conn:
@@ -387,15 +434,18 @@ def get_all_managed_stores() -> List[Dict[str, Any]]:
         ]
 
 
-def add_managed_store(store_id: str, name: str) -> None:
+def add_managed_store(store_id: str, name: str, keywords: Optional[List[str]] = None) -> None:
     """Adds or activates a restaurant store."""
+    import json
+
+    kw_json = json.dumps(keywords or [], ensure_ascii=False)
     with get_db_connection() as conn:
         conn.execute(
             """
-            INSERT INTO managed_stores (store_id, name, is_active) VALUES (?, ?, 1)
+            INSERT INTO managed_stores (store_id, name, keywords, is_active) VALUES (?, ?, ?, 1)
             ON CONFLICT(store_id) DO UPDATE SET name = excluded.name, is_active = 1
         """,
-            (store_id.strip(), name.strip()),
+            (store_id.strip(), name.strip(), kw_json),
         )
 
 
@@ -405,6 +455,75 @@ def delete_managed_store(store_id: str) -> None:
         conn.execute(
             "DELETE FROM managed_stores WHERE store_id = ?", (store_id.strip(),)
         )
+
+
+# ================= INVOICE PERSISTENT SESSIONS REPOSITORY =================
+def save_invoice_session(doc_id: str, user_id: int, state: Dict[str, Any]) -> None:
+    """Persists or updates active invoice processing session state in SQLite."""
+    import json
+    from dataclasses import asdict, is_dataclass
+
+    def default_serializer(o):
+        if is_dataclass(o):
+            return asdict(o)
+        raise TypeError(f"Object of type {type(o)} is not JSON serializable")
+
+    state_json = json.dumps(state, default=default_serializer, ensure_ascii=False)
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO invoice_sessions (doc_id, user_id, state_json, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(doc_id) DO UPDATE SET
+                state_json = excluded.state_json,
+                updated_at = CURRENT_TIMESTAMP
+        """,
+            (doc_id, user_id, state_json),
+        )
+
+
+def get_invoice_session(doc_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves and deserializes active invoice processing session."""
+    import json
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT state_json FROM invoice_sessions WHERE doc_id = ?", (doc_id,)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return json.loads(row[0])
+
+
+def delete_invoice_session(doc_id: str) -> None:
+    """Removes completed or cancelled invoice processing session."""
+    with get_db_connection() as conn:
+        conn.execute("DELETE FROM invoice_sessions WHERE doc_id = ?", (doc_id,))
+
+
+def cleanup_stale_sessions(ttl_seconds: int = 3600) -> List[str]:
+    """Deletes sessions older than TTL and returns their doc_ids for workspace file cleanup."""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT doc_id FROM invoice_sessions 
+            WHERE strftime('%s', 'now') - strftime('%s', updated_at) > ?
+        """,
+            (ttl_seconds,),
+        )
+        stale_ids = [r[0] for r in cur.fetchall()]
+        if stale_ids:
+            cur.execute(
+                """
+                DELETE FROM invoice_sessions 
+                WHERE strftime('%s', 'now') - strftime('%s', updated_at) > ?
+            """,
+                (ttl_seconds,),
+            )
+        return stale_ids
 
 
 def search_mappings_for_admin(query: str, limit: int = 10) -> List[Dict[str, Any]]:

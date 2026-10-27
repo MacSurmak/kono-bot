@@ -24,8 +24,11 @@ def normalize_pdf_rotation(file_path: str) -> bytes:
             buf = io.BytesIO()
             writer.write(buf)
             return buf.getvalue()
-    except Exception:
-        pass
+    except Exception as e:
+        from loguru import logger
+        logger.warning(
+            f"Failed to normalize PDF rotation for '{file_path}': {e}. Using raw file bytes."
+        )
 
     with open(file_path, "rb") as f:
         return f.read()

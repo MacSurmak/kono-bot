@@ -75,26 +75,3 @@ def get_admin_ids() -> set[int]:
     if "admin_id" in tg and tg["admin_id"]:
         return {int(tg["admin_id"])}
     return set()
-
-
-# Single Source of Truth for allowed stores and keyword mappings
-STORES_CONFIG = {
-    "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac": {
-        "name": "АЭРОПОРТ",
-        "keywords": ["аэропорт", "ленинградский", "ленинградка", "д. 62", "дом 62"],
-    },
-    "62b795dd-f0e2-4d3b-b354-5ff194b8dcd9": {
-        "name": "ОКТЯБРЬСКАЯ",
-        "keywords": [
-            "октябрьская",
-            "серпуховская",
-            "замоскворечье",
-            "8/7",
-            "большая серпуховская",
-        ],
-    },
-}
-ALLOWED_STORES = {store_id: data["name"] for store_id, data in STORES_CONFIG.items()}
-STORE_KEYWORDS = {
-    store_id: data["keywords"] for store_id, data in STORES_CONFIG.items()
-}
