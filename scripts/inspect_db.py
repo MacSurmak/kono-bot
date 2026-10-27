@@ -50,7 +50,9 @@ async def inspect_async(search_query: str = ""):
                 raw_name,
             )
             for row in variants:
-                print(f"     └─ selected {row['usage_count']} time(s): '{row['iiko_name']}' (sku: {row['iiko_article']})")
+                print(
+                    f"     └─ selected {row['usage_count']} time(s): '{row['iiko_name']}' (sku: {row['iiko_article']})"
+                )
         print("-" * 80)
     else:
         print("\n✨ ALL MAPPINGS ARE 100% UNAMBIGUOUS. Zero conflicts.")
@@ -85,10 +87,12 @@ async def inspect_async(search_query: str = ""):
         print("-" * 92)
         for r in rows:
             votes = f"x{r['usage_count']}"
-            coeff_val = float(r['package_coefficient']) if r['package_coefficient'] else 1.0
+            coeff_val = (
+                float(r["package_coefficient"]) if r["package_coefficient"] else 1.0
+            )
             coeff = f"x{coeff_val:g}" if coeff_val != 1.0 else "1.0"
-            raw = r['raw_name'][:34]
-            article_str = f" ({r['iiko_article']})" if r['iiko_article'] else ""
+            raw = r["raw_name"][:34]
+            article_str = f" ({r['iiko_article']})" if r["iiko_article"] else ""
             iiko = f"{r['iiko_name']}{article_str}"
             print(f"{votes:<8} | {coeff:<7} | {raw:<36} | {iiko[:33]:<33}")
     print("=" * 92)
@@ -108,7 +112,6 @@ async def inspect_async(search_query: str = ""):
                 f"{g_row[0]:<20} | {g_row[1]:<8} | {g_row[2]:<8} | {g_row[3]:<10} | {g_row[4]}"
             )
         print("=" * 75)
-
 
     await close_db()
 

@@ -17,7 +17,9 @@ from services.iiko_client import client
 from storage import init_db, close_db, record_mapping_vote
 
 
-async def train_async(data_dir: str, override_from: str = None, override_to: str = None):
+async def train_async(
+    data_dir: str, override_from: str = None, override_to: str = None
+):
     await init_db()
     if not os.path.exists(data_dir):
         print(f"[-] Directory '{data_dir}' not found!")

@@ -32,7 +32,9 @@ class GeminiRotator:
                 pass
         return self._local_counts.get(key_name, 0)
 
-    def _record_key_stat(self, key_name: str, success: bool, is_rate_limit: bool = False) -> None:
+    def _record_key_stat(
+        self, key_name: str, success: bool, is_rate_limit: bool = False
+    ) -> None:
         if self._redis:
             try:
                 self._redis.incr(f"gemini:key:{key_name}:requests")
