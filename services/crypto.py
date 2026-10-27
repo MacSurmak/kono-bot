@@ -39,8 +39,12 @@ def decrypt_secret(ciphertext: Optional[bytes]) -> str:
         cipher = Fernet(_get_encryption_key())
         return cipher.decrypt(ciphertext).decode("utf-8")
     except InvalidToken as it:
-        logger.error("Failed to decrypt secret: invalid cryptographic token or corrupted key.")
-        raise EncryptionError("Invalid encryption key or corrupted secret payload") from it
+        logger.error(
+            "Failed to decrypt secret: invalid cryptographic token or corrupted key."
+        )
+        raise EncryptionError(
+            "Invalid encryption key or corrupted secret payload"
+        ) from it
     except Exception as e:
         logger.error(f"Failed to decrypt secret: {e}")
         raise EncryptionError(f"Decryption failed: {e}") from e

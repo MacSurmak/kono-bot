@@ -35,22 +35,28 @@ def get_admin_main_kb() -> InlineKeyboardMarkup:
     )
 
 
-def get_training_accumulator_kb(batch_id: str, total_files: int) -> InlineKeyboardMarkup:
+def get_training_accumulator_kb(
+    batch_id: str, total_files: int
+) -> InlineKeyboardMarkup:
     """Constructs live dashboard keyboard for accumulating training documents."""
     rows = []
     if total_files > 0:
-        rows.append([
-            InlineKeyboardButton(
-                text=t("admin_btn_start_training_analysis"),
-                callback_data=f"admin:train_run:{batch_id}",
-            )
-        ])
-    rows.append([
-        InlineKeyboardButton(
-            text=t("btn_cancel"),
-            callback_data=f"admin:train_cancel:{batch_id}",
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=t("admin_btn_start_training_analysis"),
+                    callback_data=f"admin:train_run:{batch_id}",
+                )
+            ]
         )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_cancel"),
+                callback_data=f"admin:train_cancel:{batch_id}",
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

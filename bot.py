@@ -31,7 +31,9 @@ async def run_garbage_collector():
                 cleaned_files = 0
                 if os.path.exists(TMP_DIR):
                     for fname in os.listdir(TMP_DIR):
-                        if any(fname.startswith(f"{doc_id}_") for doc_id in stale_doc_ids):
+                        if any(
+                            fname.startswith(f"{doc_id}_") for doc_id in stale_doc_ids
+                        ):
                             try:
                                 os.remove(os.path.join(TMP_DIR, fname))
                                 cleaned_files += 1

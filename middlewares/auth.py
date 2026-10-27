@@ -33,7 +33,11 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Allow /start with invite payload to reach handler for activation
-        if isinstance(event, Message) and event.text and event.text.startswith("/start inv_"):
+        if (
+            isinstance(event, Message)
+            and event.text
+            and event.text.startswith("/start inv_")
+        ):
             return await handler(event, data)
 
         # Check existing user authorization

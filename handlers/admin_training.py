@@ -11,7 +11,11 @@ from loguru import logger
 
 from lexicon import t
 from config import get_admin_ids
-from training_service import safe_extract_zip, simulate_batch_training, apply_batch_training
+from training_service import (
+    safe_extract_zip,
+    simulate_batch_training,
+    apply_batch_training,
+)
 from keyboards.admin_kb import (
     get_training_accumulator_kb,
     get_training_confirmation_kb,
@@ -48,7 +52,9 @@ def _cleanup_scratch(batch_id: str):
 
 
 @router.callback_query(F.data == "admin:training_menu")
-async def process_start_training_session(callback: types.CallbackQuery, state: FSMContext):
+async def process_start_training_session(
+    callback: types.CallbackQuery, state: FSMContext
+):
     """Activates training batch accumulator session for admin."""
     if callback.from_user.id not in get_admin_ids():
         await callback.answer(t("admin_access_denied"), show_alert=True)
@@ -99,7 +105,9 @@ async def process_accumulate_document(message: types.Message, state: FSMContext)
     ext = os.path.splitext(filename)[1]
 
     if ext not in (".zip", ".xml", ".pdf"):
-        await message.answer(f"⚠️ Файл <code>{filename}</code> пропущен: поддерживаются только .zip, .xml и .pdf.")
+        await message.answer(
+            f"⚠️ Файл <code>{filename}</code> пропущен: поддерживаются только .zip, .xml и .pdf."
+        )
         return
 
     temp_file = os.path.join(scratch_dir, f"raw_{doc.file_id[:8]}_{filename}")
@@ -117,7 +125,9 @@ async def process_accumulate_document(message: types.Message, state: FSMContext)
             pdf_count += extracted_pdf
         except Exception as e:
             logger.error(f"Error extracting training zip {filename}: {e}")
-            await message.answer(f"❌ Ошибка распаковки архива <code>{filename}</code>: {e}")
+            await message.answer(
+                f"❌ Ошибка распаковки архива <code>{filename}</code>: {e}"
+            )
         finally:
             if os.path.exists(temp_file):
                 try:
@@ -158,7 +168,9 @@ async def process_accumulate_document(message: types.Message, state: FSMContext)
 
 
 @router.callback_query(F.data.startswith("admin:train_run:"))
-async def process_execute_training_simulation(callback: types.CallbackQuery, state: FSMContext):
+async def process_execute_training_simulation(
+    callback: types.CallbackQuery, state: FSMContext
+):
     """Executes dry-run matching simulation against iikoChain and formats pre-flight report."""
     if callback.from_user.id not in get_admin_ids():
         await callback.answer(t("admin_access_denied"), show_alert=True)
@@ -209,7 +221,9 @@ async def process_execute_training_simulation(callback: types.CallbackQuery, sta
                 conflicts_count=report["conflicts_count"],
                 conflict_details=conflict_details,
             ),
-            reply_markup=get_training_confirmation_kb(batch_id, report["new_items_count"]),
+            reply_markup=get_training_confirmation_kb(
+                batch_id, report["new_items_count"]
+            ),
             parse_mode="HTML",
         )
 
@@ -252,7 +266,9 @@ async def process_commit_training_results(callback: types.CallbackQuery):
     candidates = cached["report"].get("candidates_list", [])
 
     try:
-        committed = await apply_batch_training(candidates, admin_id=callback.from_user.id)
+        committed = await apply_batch_training(
+            candidates, admin_id=callback.from_user.id
+        )
         _cleanup_scratch(batch_id)
 
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -273,7 +289,9 @@ async def process_commit_training_results(callback: types.CallbackQuery):
         )
     except Exception as e:
         logger.exception(f"Failed to commit training batch {batch_id}: {e}")
-        await callback.message.edit_text(f"❌ <b>Ошибка фиксации в базе:</b>\n<code>{e}</code>")
+        await callback.message.edit_text(
+            f"❌ <b>Ошибка фиксации в базе:</b>\n<code>{e}</code>"
+        )
         _cleanup_scratch(batch_id)
 
 
@@ -290,8 +308,12 @@ async def process_download_training_report(callback: types.CallbackQuery):
         await callback.answer(t("invoice_session_expired"), show_alert=True)
         return
 
-    report_bytes = json.dumps(cached["report"], ensure_ascii=False, indent=2).encode("utf-8")
-    doc_file = types.BufferedInputFile(report_bytes, filename=f"training_report_{batch_id}.json")
+    report_bytes = json.dumps(cached["report"], ensure_ascii=False, indent=2).encode(
+        "utf-8"
+    )
+    doc_file = types.BufferedInputFile(
+        report_bytes, filename=f"training_report_{batch_id}.json"
+    )
 
     await callback.message.answer_document(
         document=doc_file,
@@ -313,11 +335,7 @@ async def process_cancel_training(callback: types.CallbackQuery, state: FSMConte
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=t("admin_btn_back"), callback_data="admin:open"
-                )
-            ]
+            [InlineKeyboardButton(text=t("admin_btn_back"), callback_data="admin:open")]
         ]
     )
     await callback.message.edit_text(

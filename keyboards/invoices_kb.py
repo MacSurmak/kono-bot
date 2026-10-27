@@ -31,14 +31,18 @@ def get_store_selection_kb(
     # Place default store at the top if set
     if default_store_id and default_store_id in allowed_stores:
         def_name = allowed_stores[default_store_id]
-        rows.append([
-            InlineKeyboardButton(
-                text=f"⭐ 🏢 {def_name} (По умолчанию)",
-                callback_data=f"inv:store:{doc_id}:{default_store_id}",
-            )
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"⭐ 🏢 {def_name} (По умолчанию)",
+                    callback_data=f"inv:store:{doc_id}:{default_store_id}",
+                )
+            ]
+        )
 
-    other_stores = {sid: name for sid, name in allowed_stores.items() if sid != default_store_id}
+    other_stores = {
+        sid: name for sid, name in allowed_stores.items() if sid != default_store_id
+    }
     current_row = []
     for store_id, store_name in other_stores.items():
         current_row.append(
@@ -52,11 +56,13 @@ def get_store_selection_kb(
     if current_row:
         rows.append(current_row)
 
-    rows.append([
-        InlineKeyboardButton(
-            text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
-        )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -146,17 +152,21 @@ def get_items_review_kb(
         coeff = float(it.get("coefficient", 1.0))
         c_str = f" x{coeff:g}" if coeff != 1.0 else ""
         btn_text = f"✏️ #{num}: {r_name} -> {i_name}{c_str}"
-        rows.append([
-            InlineKeyboardButton(
-                text=btn_text, callback_data=f"inv:edit:{doc_id}:{num}"
-            )
-        ])
-
-    rows.append([
-        InlineKeyboardButton(
-            text=t("btn_back_to_upload"), callback_data=f"inv:review_done:{doc_id}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=btn_text, callback_data=f"inv:edit:{doc_id}:{num}"
+                )
+            ]
         )
-    ])
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_back_to_upload"), callback_data=f"inv:review_done:{doc_id}"
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -149,12 +149,28 @@ async def init_db() -> asyncpg.Pool:
                     (
                         "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac",
                         "АЭРОПОРТ",
-                        json.dumps(["аэропорт", "ленинградский", "ленинградка", "д. 62", "дом 62"]),
+                        json.dumps(
+                            [
+                                "аэропорт",
+                                "ленинградский",
+                                "ленинградка",
+                                "д. 62",
+                                "дом 62",
+                            ]
+                        ),
                     ),
                     (
                         "62b795dd-f0e2-4d3b-b354-5ff194b8dcd9",
                         "ОКТЯБРЬСКАЯ",
-                        json.dumps(["октябрьская", "серпуховская", "замоскворечье", "8/7", "большая серпуховская"]),
+                        json.dumps(
+                            [
+                                "октябрьская",
+                                "серпуховская",
+                                "замоскворечье",
+                                "8/7",
+                                "большая серпуховская",
+                            ]
+                        ),
                     ),
                 ]
                 for s_id, s_name, s_kw in default_stores:
@@ -185,7 +201,9 @@ async def close_db():
 def get_db_pool() -> asyncpg.Pool:
     """Returns active database pool with Fail-Fast invariant check."""
     if _POOL is None:
-        raise RuntimeError("Database pool is not initialized. Ensure 'await init_db()' ran on startup.")
+        raise RuntimeError(
+            "Database pool is not initialized. Ensure 'await init_db()' ran on startup."
+        )
     return _POOL
 
 
@@ -256,12 +274,10 @@ async def update_user_default_store(telegram_id: int, store_id: Optional[str]) -
 
 async def get_all_bot_users() -> List[Dict[str, Any]]:
     pool = get_db_pool()
-    rows = await pool.fetch(
-        """
+    rows = await pool.fetch("""
         SELECT telegram_id, username, full_name, role, iiko_login, default_store_id, is_active, created_at
         FROM bot_users ORDER BY created_at ASC;
-    """
-    )
+    """)
     return [dict(r) for r in rows]
 
 
@@ -288,7 +304,8 @@ async def validate_and_consume_invite(
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
-                "SELECT token, is_used FROM bot_invites WHERE token = $1 FOR UPDATE;", token
+                "SELECT token, is_used FROM bot_invites WHERE token = $1 FOR UPDATE;",
+                token,
             )
             if not row or row["is_used"]:
                 return False
@@ -322,7 +339,9 @@ async def validate_and_consume_invite(
 # ================= MANAGED STORES REPOSITORY =================
 async def get_allowed_stores() -> Dict[str, str]:
     pool = get_db_pool()
-    rows = await pool.fetch("SELECT store_id, name FROM managed_stores WHERE is_active = TRUE;")
+    rows = await pool.fetch(
+        "SELECT store_id, name FROM managed_stores WHERE is_active = TRUE;"
+    )
     return {r["store_id"]: r["name"] for r in rows}
 
 
@@ -333,7 +352,11 @@ async def get_managed_stores_with_keywords() -> List[Dict[str, Any]]:
     )
     results = []
     for r in rows:
-        kw = json.loads(r["keywords"]) if isinstance(r["keywords"], str) else (r["keywords"] or [])
+        kw = (
+            json.loads(r["keywords"])
+            if isinstance(r["keywords"], str)
+            else (r["keywords"] or [])
+        )
         results.append({"store_id": r["store_id"], "name": r["name"], "keywords": kw})
     return results
 
@@ -346,7 +369,9 @@ async def get_all_managed_stores() -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-async def add_managed_store(store_id: str, name: str, keywords: Optional[List[str]] = None) -> None:
+async def add_managed_store(
+    store_id: str, name: str, keywords: Optional[List[str]] = None
+) -> None:
     pool = get_db_pool()
     kw_json = json.dumps(keywords or [], ensure_ascii=False)
     await pool.execute(
@@ -366,7 +391,9 @@ async def add_managed_store(store_id: str, name: str, keywords: Optional[List[st
 
 async def delete_managed_store(store_id: str) -> None:
     pool = get_db_pool()
-    await pool.execute("DELETE FROM managed_stores WHERE store_id = $1;", store_id.strip())
+    await pool.execute(
+        "DELETE FROM managed_stores WHERE store_id = $1;", store_id.strip()
+    )
 
 
 # ================= MAPPINGS, CONSENSUS & GOVERNANCE =================
@@ -382,7 +409,11 @@ async def record_mapping_vote(
     source: str = "manual",
 ) -> None:
     clean_name = normalize_item_name(raw_name)
-    safe_coeff = float(package_coefficient) if package_coefficient and package_coefficient > 0 else 1.0
+    safe_coeff = (
+        float(package_coefficient)
+        if package_coefficient and package_coefficient > 0
+        else 1.0
+    )
 
     pool = get_db_pool()
     async with pool.acquire() as conn:
@@ -425,7 +456,9 @@ async def record_mapping_vote(
                 )
 
 
-async def get_consensus_mapping(supplier_id: str, raw_name: str) -> Optional[Dict[str, Any]]:
+async def get_consensus_mapping(
+    supplier_id: str, raw_name: str
+) -> Optional[Dict[str, Any]]:
     clean_name = normalize_item_name(raw_name)
     pool = get_db_pool()
     rows = await pool.fetch(
@@ -444,7 +477,9 @@ async def get_consensus_mapping(supplier_id: str, raw_name: str) -> Optional[Dic
     total_votes = sum(r["usage_count"] for r in rows)
     winner = rows[0]
     confidence = winner["usage_count"] / total_votes
-    coeff = float(winner["package_coefficient"]) if winner["package_coefficient"] else 1.0
+    coeff = (
+        float(winner["package_coefficient"]) if winner["package_coefficient"] else 1.0
+    )
 
     return {
         "product_id": winner["product_id"],
@@ -459,7 +494,9 @@ async def get_consensus_mapping(supplier_id: str, raw_name: str) -> Optional[Dic
     }
 
 
-async def get_user_recent_mappings(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+async def get_user_recent_mappings(
+    user_id: int, limit: int = 10
+) -> List[Dict[str, Any]]:
     """Returns recent mappings authored by specific operator within last 48 hours."""
     pool = get_db_pool()
     rows = await pool.fetch(
@@ -507,18 +544,24 @@ async def revoke_user_mapping(user_id: int, audit_log_id: int) -> bool:
 
             if mapping:
                 if mapping["usage_count"] <= 1:
-                    await conn.execute("DELETE FROM supplier_mappings WHERE id = $1;", mapping["id"])
+                    await conn.execute(
+                        "DELETE FROM supplier_mappings WHERE id = $1;", mapping["id"]
+                    )
                 else:
                     await conn.execute(
                         "UPDATE supplier_mappings SET usage_count = usage_count - 1 WHERE id = $1;",
                         mapping["id"],
                     )
 
-            await conn.execute("DELETE FROM mapping_audit_log WHERE id = $1;", audit_log_id)
+            await conn.execute(
+                "DELETE FROM mapping_audit_log WHERE id = $1;", audit_log_id
+            )
             return True
 
 
-async def search_mappings_for_admin(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+async def search_mappings_for_admin(
+    query: str, limit: int = 10
+) -> List[Dict[str, Any]]:
     pool = get_db_pool()
     like_pattern = f"%{query.strip().lower()}%"
     rows = await pool.fetch(
@@ -552,7 +595,9 @@ async def delete_mapping_by_id(mapping_id: int) -> bool:
 
 
 # ================= PREFERRED SUPPLIERS =================
-async def save_preferred_supplier(inn: str, supplier_id: str, supplier_name: str) -> None:
+async def save_preferred_supplier(
+    inn: str, supplier_id: str, supplier_name: str
+) -> None:
     pool = get_db_pool()
     await pool.execute(
         """
@@ -571,7 +616,8 @@ async def save_preferred_supplier(inn: str, supplier_id: str, supplier_name: str
 async def get_preferred_supplier(inn: str) -> Optional[Tuple[str, str]]:
     pool = get_db_pool()
     row = await pool.fetchrow(
-        "SELECT supplier_id, supplier_name FROM preferred_suppliers WHERE inn = $1;", inn.strip()
+        "SELECT supplier_id, supplier_name FROM preferred_suppliers WHERE inn = $1;",
+        inn.strip(),
     )
     if not row:
         return None
@@ -579,7 +625,9 @@ async def get_preferred_supplier(inn: str) -> Optional[Tuple[str, str]]:
 
 
 # ================= INVOICE PERSISTENT SESSIONS =================
-async def save_invoice_session(doc_id: str, user_id: int, state: Dict[str, Any]) -> None:
+async def save_invoice_session(
+    doc_id: str, user_id: int, state: Dict[str, Any]
+) -> None:
     def default_serializer(o):
         if is_dataclass(o):
             return asdict(o)
@@ -631,7 +679,9 @@ async def cleanup_stale_sessions(ttl_seconds: int = 3600) -> List[str]:
 
 
 # ================= GEMINI TELEMETRY =================
-async def record_gemini_key_stat(key_name: str, success: bool, is_rate_limit: bool = False) -> None:
+async def record_gemini_key_stat(
+    key_name: str, success: bool, is_rate_limit: bool = False
+) -> None:
     pool = get_db_pool()
     await pool.execute(
         """
@@ -657,14 +707,21 @@ async def get_gemini_key_usage_counts() -> Dict[str, int]:
 
 async def get_all_gemini_key_stats() -> List[Tuple[str, int, int, int, str]]:
     pool = get_db_pool()
-    rows = await pool.fetch(
-        """
+    rows = await pool.fetch("""
         SELECT key_name, total_requests, successful_requests, rate_limit_hits, to_char(last_used_at, 'YYYY-MM-DD HH24:MI:SS') as last_used
         FROM gemini_key_stats
         ORDER BY total_requests DESC;
-    """
-    )
-    return [(r["key_name"], r["total_requests"], r["successful_requests"], r["rate_limit_hits"], r["last_used"]) for r in rows]
+    """)
+    return [
+        (
+            r["key_name"],
+            r["total_requests"],
+            r["successful_requests"],
+            r["rate_limit_hits"],
+            r["last_used"],
+        )
+        for r in rows
+    ]
 
 
 def record_mapping_vote(
@@ -953,7 +1010,9 @@ def get_all_managed_stores() -> List[Dict[str, Any]]:
         ]
 
 
-def add_managed_store(store_id: str, name: str, keywords: Optional[List[str]] = None) -> None:
+def add_managed_store(
+    store_id: str, name: str, keywords: Optional[List[str]] = None
+) -> None:
     """Adds or activates a restaurant store."""
     import json
 

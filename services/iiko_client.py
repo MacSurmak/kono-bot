@@ -25,9 +25,12 @@ class IikoClient:
     def _init_redis(self):
         try:
             import redis
+
             self.redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
         except Exception as e:
-            logger.warning(f"Redis cache connection unavailable: {e}. Falling back to live API calls.")
+            logger.warning(
+                f"Redis cache connection unavailable: {e}. Falling back to live API calls."
+            )
             self.redis_client = None
 
     def authenticate_credentials(self, login: str, password: str) -> str:
@@ -35,11 +38,15 @@ class IikoClient:
         pass_hash = hashlib.sha1(password.encode("utf-8")).hexdigest()
         with requests.Session() as s:
             resp = s.get(
-                f"{self.base_url}/api/auth", params={"login": login, "pass": pass_hash}, timeout=12
+                f"{self.base_url}/api/auth",
+                params={"login": login, "pass": pass_hash},
+                timeout=12,
             )
             if resp.status_code != 200:
                 resp = s.get(
-                    f"{self.base_url}/api/auth", params={"login": login, "pass": password}, timeout=12
+                    f"{self.base_url}/api/auth",
+                    params={"login": login, "pass": password},
+                    timeout=12,
                 )
             if resp.status_code != 200:
                 raise ConnectionError(
@@ -55,7 +62,9 @@ class IikoClient:
         token = self.authenticate_credentials(login, password)
         # Immediately logout session token
         try:
-            requests.get(f"{self.base_url}/api/logout", params={"key": token}, timeout=5)
+            requests.get(
+                f"{self.base_url}/api/logout", params={"key": token}, timeout=5
+            )
         except Exception:
             pass
         return True
@@ -78,7 +87,9 @@ class IikoClient:
                 return resp
             finally:
                 try:
-                    s.get(f"{self.base_url}/api/logout", params={"key": token}, timeout=5)
+                    s.get(
+                        f"{self.base_url}/api/logout", params={"key": token}, timeout=5
+                    )
                 except Exception:
                     pass
 
@@ -122,7 +133,9 @@ class IikoClient:
 
         if self.redis_client and suppliers:
             try:
-                self.redis_client.setex(cache_key, 600, json.dumps(suppliers, ensure_ascii=False))
+                self.redis_client.setex(
+                    cache_key, 600, json.dumps(suppliers, ensure_ascii=False)
+                )
             except Exception as e:
                 logger.warning(f"Failed to write suppliers to Redis cache: {e}")
 
@@ -181,7 +194,9 @@ class IikoClient:
 
         if self.redis_client and clean_products:
             try:
-                self.redis_client.setex(cache_key, 600, json.dumps(clean_products, ensure_ascii=False))
+                self.redis_client.setex(
+                    cache_key, 600, json.dumps(clean_products, ensure_ascii=False)
+                )
             except Exception as e:
                 logger.warning(f"Failed to write catalog to Redis cache: {e}")
 
@@ -218,7 +233,9 @@ class IikoClient:
         sorted_stores = sorted(stores, key=lambda s: s["name"])
         if self.redis_client and sorted_stores:
             try:
-                self.redis_client.setex(cache_key, 600, json.dumps(sorted_stores, ensure_ascii=False))
+                self.redis_client.setex(
+                    cache_key, 600, json.dumps(sorted_stores, ensure_ascii=False)
+                )
             except Exception:
                 pass
         return sorted_stores

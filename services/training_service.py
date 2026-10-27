@@ -32,7 +32,11 @@ def safe_extract_zip(zip_path: str, extract_dir: str) -> Tuple[int, int]:
         for member in zf.infolist():
             # Defense against Zip-Slip path traversal
             filename = os.path.basename(member.filename)
-            if not filename or filename.startswith(".") or member.filename.startswith("__MACOSX"):
+            if (
+                not filename
+                or filename.startswith(".")
+                or member.filename.startswith("__MACOSX")
+            ):
                 continue
 
             lower_name = filename.lower()
@@ -41,13 +45,17 @@ def safe_extract_zip(zip_path: str, extract_dir: str) -> Tuple[int, int]:
 
             total_uncompressed_size += member.file_size
             if total_uncompressed_size > MAX_BATCH_BYTES:
-                raise BatchTrainingError(f"Превышен лимит размера распакованных данных (макс. {MAX_BATCH_BYTES // (1024*1024)} МБ).")
+                raise BatchTrainingError(
+                    f"Превышен лимит размера распакованных данных (макс. {MAX_BATCH_BYTES // (1024*1024)} МБ)."
+                )
 
             target_path = os.path.join(extract_dir, filename)
             # Handle duplicate filenames inside subfolders safely
             if os.path.exists(target_path):
                 base, ext = os.path.splitext(filename)
-                target_path = os.path.join(extract_dir, f"{base}_{abs(hash(member.filename)) % 10000}{ext}")
+                target_path = os.path.join(
+                    extract_dir, f"{base}_{abs(hash(member.filename)) % 10000}{ext}"
+                )
 
             with zf.open(member) as source, open(target_path, "wb") as target:
                 shutil.copyfileobj(source, target)
@@ -69,10 +77,14 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
     ]
 
     if not files:
-        raise BatchTrainingError("В пакете не обнаружено поддерживаемых документов (.xml или .pdf).")
+        raise BatchTrainingError(
+            "В пакете не обнаружено поддерживаемых документов (.xml или .pdf)."
+        )
 
     if len(files) > MAX_BATCH_FILES:
-        raise BatchTrainingError(f"Превышен максимальный лимит документов на одну сессию: {len(files)} из {MAX_BATCH_FILES}.")
+        raise BatchTrainingError(
+            f"Превышен максимальный лимит документов на одну сессию: {len(files)} из {MAX_BATCH_FILES}."
+        )
 
     parsed_docs: List[RawInvoiceDocument] = []
     valid_dates: List[datetime.date] = []
@@ -89,12 +101,16 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
                 except ValueError:
                     pass
             else:
-                parse_errors.append(f"{os.path.basename(file_path)}: документ не содержит товарных строк")
+                parse_errors.append(
+                    f"{os.path.basename(file_path)}: документ не содержит товарных строк"
+                )
         except Exception as e:
             parse_errors.append(f"{os.path.basename(file_path)}: {str(e)}")
 
     if not parsed_docs:
-        raise BatchTrainingError(f"Не удалось успешно разобрать ни одного документа. Ошибки: {'; '.join(parse_errors[:3])}")
+        raise BatchTrainingError(
+            f"Не удалось успешно разобрать ни одного документа. Ошибки: {'; '.join(parse_errors[:3])}"
+        )
 
     # Determine date boundaries with 5-day buffer
     if valid_dates:
@@ -116,7 +132,9 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
         params={"from": date_from, "to": date_to},
     )
     if inv_resp.status_code != 200:
-        raise BatchTrainingError(f"Сбой запроса накладных iiko ({inv_resp.status_code}): {inv_resp.text[:200]}")
+        raise BatchTrainingError(
+            f"Сбой запроса накладных iiko ({inv_resp.status_code}): {inv_resp.text[:200]}"
+        )
 
     inv_root = ET.fromstring(inv_resp.content)
     iiko_docs = inv_root.findall(".//document")
@@ -240,7 +258,9 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
         # Invariant 2: Unique sum bijections
         d_sums = Counter(round(it.sum, 2) for it in doc.items)
         i_sums = Counter(it["sum"] for it in iiko_items)
-        unique_sums = {s for s, count in d_sums.items() if count == 1 and i_sums.get(s) == 1}
+        unique_sums = {
+            s for s, count in d_sums.items() if count == 1 and i_sums.get(s) == 1
+        }
 
         if unique_sums:
             doc_by_sum = {round(it.sum, 2): it for it in doc.items}
@@ -297,7 +317,9 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
     current_mappings = await pool.fetch(
         "SELECT supplier_id, raw_name, product_id, iiko_name, package_coefficient, usage_count FROM supplier_mappings;"
     )
-    current_map = {(r["supplier_id"], r["raw_name"].strip().lower()): r for r in current_mappings}
+    current_map = {
+        (r["supplier_id"], r["raw_name"].strip().lower()): r for r in current_mappings
+    }
 
     new_items_count = 0
     confirmed_count = 0
@@ -319,7 +341,10 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
             curr = current_map[key]
             if curr["product_id"] == c["product_id"]:
                 confirmed_count += 1
-                if abs(float(curr["package_coefficient"]) - c["package_coefficient"]) > 0.001:
+                if (
+                    abs(float(curr["package_coefficient"]) - c["package_coefficient"])
+                    > 0.001
+                ):
                     coeff_updates_count += 1
             else:
                 conflicts.append(
@@ -373,5 +398,7 @@ async def apply_batch_training(candidates: List[Dict[str, Any]], admin_id: int) 
                 )
                 committed_count += 1
 
-    logger.info(f"Admin {admin_id} committed {committed_count} mappings from batch training.")
+    logger.info(
+        f"Admin {admin_id} committed {committed_count} mappings from batch training."
+    )
     return committed_count

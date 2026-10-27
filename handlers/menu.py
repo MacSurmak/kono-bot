@@ -74,9 +74,7 @@ async def process_menu_help(callback: types.CallbackQuery):
             ]
         ]
     )
-    await callback.message.edit_text(
-        t("help_text"), reply_markup=kb, parse_mode="HTML"
-    )
+    await callback.message.edit_text(t("help_text"), reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "menu:cabinet")
@@ -99,14 +97,20 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
     stores = await get_all_managed_stores()
     store_map = {s["store_id"]: s["name"] for s in stores}
     def_store_id = user.get("default_store_id")
-    store_name = store_map.get(def_store_id, "Не выбран (выбор при каждой накладной)") if def_store_id else "Не выбран"
+    store_name = (
+        store_map.get(def_store_id, "Не выбран (выбор при каждой накладной)")
+        if def_store_id
+        else "Не выбран"
+    )
 
     role_str = "👑 Администратор" if user.get("role") == "admin" else "👤 Оператор"
 
     text = t(
         "cab_profile_card",
         full_name=user.get("full_name", "Сотрудник"),
-        username=f"@{user.get('username')}" if user.get("username") else "Без юзернейма",
+        username=(
+            f"@{user.get('username')}" if user.get("username") else "Без юзернейма"
+        ),
         role=role_str,
         creds_status=creds_status,
         default_store=store_name,
@@ -117,7 +121,9 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
 
 
 @router.callback_query(F.data == "cab:set_creds")
-async def process_start_credential_input(callback: types.CallbackQuery, state: FSMContext):
+async def process_start_credential_input(
+    callback: types.CallbackQuery, state: FSMContext
+):
     """Prompts operator for personal iikoOffice login."""
     await state.set_state(UserCabinetState.waiting_iiko_login)
     await callback.message.edit_text(
@@ -222,7 +228,11 @@ async def process_password_input(message: types.Message, state: FSMContext):
 async def process_test_connection(callback: types.CallbackQuery):
     """Executes live test authentication using encrypted user credentials."""
     user = await get_bot_user(callback.from_user.id)
-    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
+    if (
+        not user
+        or not user.get("iiko_login")
+        or not user.get("iiko_password_encrypted")
+    ):
         await callback.answer(t("cab_no_creds_alert"), show_alert=True)
         return
 
@@ -232,7 +242,9 @@ async def process_test_connection(callback: types.CallbackQuery):
         await asyncio.to_thread(client.test_user_credentials, login, password)
         await callback.answer(t("cab_test_ok_alert"), show_alert=True)
     except Exception as e:
-        await callback.answer(t("cab_test_fail_alert", error=str(e)[:100]), show_alert=True)
+        await callback.answer(
+            t("cab_test_fail_alert", error=str(e)[:100]), show_alert=True
+        )
 
 
 @router.callback_query(F.data == "cab:my_mappings")
@@ -275,7 +287,9 @@ async def process_revoke_my_mapping(callback: types.CallbackQuery):
     success = await revoke_user_mapping(callback.from_user.id, audit_id)
 
     if success:
-        logger.info(f"Operator {callback.from_user.id} revoked mapping audit log #{audit_id}")
+        logger.info(
+            f"Operator {callback.from_user.id} revoked mapping audit log #{audit_id}"
+        )
         await callback.answer(t("cab_mapping_revoked_success"), show_alert=True)
     else:
         await callback.answer(t("cab_mapping_revoke_failed"), show_alert=True)

@@ -62,7 +62,9 @@ def get_doc_lock(doc_id: str) -> asyncio.Lock:
 async def get_cached_catalog() -> list:
     async with _CACHE_LOCK:
         now = time.monotonic()
-        if not _CATALOG_CACHE["data"] or (now - _CATALOG_CACHE["timestamp"] > CACHE_TTL):
+        if not _CATALOG_CACHE["data"] or (
+            now - _CATALOG_CACHE["timestamp"] > CACHE_TTL
+        ):
             catalog = await asyncio.to_thread(client.get_active_stock_products)
             _CATALOG_CACHE["data"] = catalog
             _CATALOG_CACHE["timestamp"] = now
@@ -72,7 +74,9 @@ async def get_cached_catalog() -> list:
 async def get_cached_suppliers() -> dict:
     async with _CACHE_LOCK:
         now = time.monotonic()
-        if not _SUPPLIERS_CACHE["data"] or (now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL):
+        if not _SUPPLIERS_CACHE["data"] or (
+            now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL
+        ):
             suppliers = await asyncio.to_thread(client.get_suppliers_grouped)
             _SUPPLIERS_CACHE["data"] = suppliers
             _SUPPLIERS_CACHE["timestamp"] = now
@@ -159,6 +163,7 @@ async def handle_document_upload(message: types.Message):
         await save_invoice_session(doc_id, message.from_user.id, session_data)
 
         from storage import get_bot_user
+
         db_user = await get_bot_user(message.from_user.id)
         default_store_id = db_user.get("default_store_id") if db_user else None
         allowed_stores = await get_allowed_stores()
@@ -230,6 +235,7 @@ async def process_pdf_confirmation(callback: types.CallbackQuery):
         return
 
     from storage import get_bot_user
+
     db_user = await get_bot_user(callback.from_user.id)
     default_store_id = db_user.get("default_store_id") if db_user else None
     allowed_stores = await get_allowed_stores()
@@ -247,9 +253,7 @@ async def process_pdf_confirmation(callback: types.CallbackQuery):
             total_sum=session["total_sum"],
             items_count=len(parsed_doc.get("items", [])),
         ),
-        reply_markup=get_store_selection_kb(
-            doc_id, allowed_stores, default_store_id
-        ),
+        reply_markup=get_store_selection_kb(doc_id, allowed_stores, default_store_id),
     )
 
 
@@ -412,7 +416,10 @@ async def proceed_with_item_alignment(message: types.Message, doc_id: str):
             )
         else:
             candidates = find_catalog_candidates(
-                raw_name=item["raw_name"], article=item.get("article", ""), catalog=catalog, limit=3
+                raw_name=item["raw_name"],
+                article=item.get("article", ""),
+                catalog=catalog,
+                limit=3,
             )
             unresolved_items.append(
                 {"item_idx": idx, "item": item, "candidates": candidates}
@@ -455,7 +462,9 @@ async def prompt_next_unresolved_item(
     from keyboards.invoices_kb import get_item_resolution_kb
 
     article_val = item.get("article", "")
-    article_info = f"\nАртикул поставщика: <code>{article_val}</code>" if article_val else ""
+    article_info = (
+        f"\nАртикул поставщика: <code>{article_val}</code>" if article_val else ""
+    )
     card_text = t(
         "invoice_unmatched_item_card",
         current=current["item_idx"],
@@ -683,7 +692,11 @@ async def apply_confirmed_item_match(
             return
 
         target_idx_entry = next(
-            (idx for idx, it in enumerate(session["unresolved_items"]) if it["item_idx"] == item_idx),
+            (
+                idx
+                for idx, it in enumerate(session["unresolved_items"])
+                if it["item_idx"] == item_idx
+            ),
             None,
         )
         if target_idx_entry is None:
@@ -863,7 +876,11 @@ async def process_edit_matched_item(callback: types.CallbackQuery):
             return
 
         target_idx = next(
-            (idx for idx, it in enumerate(session["matched_items"]) if it["num"] == item_num),
+            (
+                idx
+                for idx, it in enumerate(session["matched_items"])
+                if it["num"] == item_num
+            ),
             None,
         )
         if target_idx is None:
@@ -872,7 +889,9 @@ async def process_edit_matched_item(callback: types.CallbackQuery):
 
         reverted_matched = session["matched_items"].pop(target_idx)
         raw_items = session["parsed_doc"].get("items", [])
-        original_raw_item = next((it for it in raw_items if it["line_num"] == item_num), None)
+        original_raw_item = next(
+            (it for it in raw_items if it["line_num"] == item_num), None
+        )
 
         if not original_raw_item:
             original_raw_item = {
@@ -917,7 +936,11 @@ async def process_draft_upload(callback: types.CallbackQuery):
 
     # Verify operator has configured iiko credentials
     operator = await get_bot_user(callback.from_user.id)
-    if not operator or not operator.get("iiko_login") or not operator.get("iiko_password_encrypted"):
+    if (
+        not operator
+        or not operator.get("iiko_login")
+        or not operator.get("iiko_password_encrypted")
+    ):
         await callback.message.edit_text(
             t("invoice_no_creds_error"),
             reply_markup=get_setup_creds_kb(doc_id),
@@ -931,7 +954,10 @@ async def process_draft_upload(callback: types.CallbackQuery):
     except Exception as e:
         logger.error(f"Decryption failure for user {callback.from_user.id}: {e}")
         await callback.message.edit_text(
-            t("cab_creds_failed", error="Сбой расшифровки пароля. Настройте пароль заново."),
+            t(
+                "cab_creds_failed",
+                error="Сбой расшифровки пароля. Настройте пароль заново.",
+            ),
             reply_markup=get_setup_creds_kb(doc_id),
             parse_mode="HTML",
         )
