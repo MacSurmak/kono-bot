@@ -11,8 +11,8 @@ from config import get_admin_ids
 from storage import (
     get_bot_user,
     update_user_iiko_credentials,
-    update_user_default_store,
-    get_all_managed_stores,
+    get_user_stores,
+    toggle_user_store,
 )
 from keyboards.menu_kb import (
     get_main_menu_kb,

@@ -20,9 +20,6 @@ from storage import (
     set_user_role,
     set_user_active,
     is_admin_user,
-    get_all_managed_stores,
-    add_managed_store,
-    delete_managed_store,
     search_mappings_for_admin,
     delete_mapping_by_id,
 )

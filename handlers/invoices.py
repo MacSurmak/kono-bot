@@ -21,7 +21,7 @@ from storage import (
     get_preferred_supplier,
     save_preferred_supplier,
     get_allowed_stores,
-    get_managed_stores_with_keywords,
+    get_user_stores,
     save_invoice_session,
     get_invoice_session,
     delete_invoice_session,
