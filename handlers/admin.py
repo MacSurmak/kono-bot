@@ -9,8 +9,6 @@ from config import cfg
 from services.iiko_client import client
 from keyboards.admin_kb import (
     get_admin_main_kb,
-    get_admin_stores_kb,
-    get_iiko_import_stores_kb,
     get_admin_mappings_kb,
 )
 from storage import (
