@@ -65,15 +65,16 @@ async def init_db() -> asyncpg.Pool:
                 );
             """)
 
-            # 3. Dynamic managed stores
+            # 3. User-connected restaurant delivery stores
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS managed_stores (
-                    store_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                CREATE TABLE IF NOT EXISTS user_stores (
+                    user_id BIGINT NOT NULL,
+                    store_id TEXT NOT NULL,
+                    store_name TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, store_id)
                 );
+                CREATE INDEX IF NOT EXISTS idx_user_stores_user ON user_stores (user_id);
             """)
 
             # 4. Supplier mappings (network consensus)
@@ -331,64 +332,48 @@ async def validate_and_consume_invite(
             return True
 
 
-# ================= MANAGED STORES REPOSITORY =================
-async def get_allowed_stores() -> Dict[str, str]:
+# ================= USER STORES REPOSITORY =================
+async def get_user_stores(user_id: int) -> List[Dict[str, str]]:
+    """Retrieves all restaurant stores connected to specific operator profile."""
     pool = get_db_pool()
     rows = await pool.fetch(
-        "SELECT store_id, name FROM managed_stores WHERE is_active = TRUE;"
+        "SELECT store_id, store_name FROM user_stores WHERE user_id = $1 ORDER BY store_name ASC;",
+        user_id,
     )
-    return {r["store_id"]: r["name"] for r in rows}
+    return [{"store_id": r["store_id"], "name": r["store_name"]} for r in rows]
 
 
-async def get_managed_stores_with_keywords() -> List[Dict[str, Any]]:
+async def toggle_user_store(user_id: int, store_id: str, store_name: str) -> bool:
+    """Connects or disconnects a restaurant store for user. Returns True if connected, False if disconnected."""
     pool = get_db_pool()
-    rows = await pool.fetch(
-        "SELECT store_id, name, keywords FROM managed_stores WHERE is_active = TRUE;"
-    )
-    results = []
-    for r in rows:
-        kw = (
-            json.loads(r["keywords"])
-            if isinstance(r["keywords"], str)
-            else (r["keywords"] or [])
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM user_stores WHERE user_id = $1 AND store_id = $2;",
+            user_id,
+            store_id,
         )
-        results.append({"store_id": r["store_id"], "name": r["name"], "keywords": kw})
-    return results
+        if row:
+            await conn.execute(
+                "DELETE FROM user_stores WHERE user_id = $1 AND store_id = $2;",
+                user_id,
+                store_id,
+            )
+            return False
+        else:
+            await conn.execute(
+                "INSERT INTO user_stores (user_id, store_id, store_name) VALUES ($1, $2, $3);",
+                user_id,
+                store_id,
+                store_name,
+            )
+            return True
 
 
-async def get_all_managed_stores() -> List[Dict[str, Any]]:
+async def get_allowed_stores() -> Dict[str, str]:
+    """Compatibility query returning all distinct stores connected across network operators."""
     pool = get_db_pool()
-    rows = await pool.fetch(
-        "SELECT store_id, name, is_active FROM managed_stores ORDER BY name ASC;"
-    )
-    return [dict(r) for r in rows]
-
-
-async def add_managed_store(
-    store_id: str, name: str, keywords: Optional[List[str]] = None
-) -> None:
-    pool = get_db_pool()
-    kw_json = json.dumps(keywords or [], ensure_ascii=False)
-    await pool.execute(
-        """
-        INSERT INTO managed_stores (store_id, name, keywords, is_active)
-        VALUES ($1, $2, $3::jsonb, TRUE)
-        ON CONFLICT (store_id) DO UPDATE SET 
-            name = EXCLUDED.name, 
-            keywords = EXCLUDED.keywords, 
-            is_active = TRUE;
-    """,
-        store_id.strip(),
-        name.strip(),
-        kw_json,
-    )
-
-
-async def delete_managed_store(store_id: str) -> None:
-    pool = get_db_pool()
-    await pool.execute(
-        "DELETE FROM managed_stores WHERE store_id = $1;", store_id.strip()
-    )
+    rows = await pool.fetch("SELECT DISTINCT store_id, store_name FROM user_stores;")
+    return {r["store_id"]: r["store_name"] for r in rows}
 
 
 # ================= MAPPINGS, CONSENSUS & GOVERNANCE =================

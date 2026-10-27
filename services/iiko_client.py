@@ -201,8 +201,8 @@ class IikoClient:
 
         return clean_products
 
-    def get_iiko_departments(self) -> list:
-        """Retrieves all physical warehouse stores from /api/corporation/stores with Redis cache."""
+    def get_iiko_departments_for_user(self, login: str, password: str) -> list:
+        """Retrieves all physical warehouse stores using operator credentials with 1-hour Redis cache."""
         cache_key = "cache:iiko:departments"
         if self.redis_client:
             try:
@@ -212,32 +212,44 @@ class IikoClient:
             except Exception:
                 pass
 
-        resp = self.get("/api/corporation/stores")
-        if resp.status_code != 200:
-            return []
-        root = ET.fromstring(resp.content)
-        stores = []
-        for dep in root.findall(".//corporateItemDto"):
-            s_id = dep.findtext("id")
-            name = (dep.findtext("name") or "").strip()
-            code = (dep.findtext("code") or "").strip()
-            if s_id and name:
-                stores.append(
-                    {
-                        "id": s_id,
-                        "name": name,
-                        "code": code,
-                    }
+        token = self.authenticate_credentials(login, password)
+        try:
+            with requests.Session() as s:
+                resp = s.get(
+                    f"{self.base_url}/api/corporation/stores",
+                    params={"key": token},
+                    timeout=15,
                 )
-        sorted_stores = sorted(stores, key=lambda s: s["name"])
-        if self.redis_client and sorted_stores:
+                if resp.status_code != 200:
+                    return []
+                root = ET.fromstring(resp.content)
+                stores = []
+                for dep in root.findall(".//corporateItemDto"):
+                    s_id = dep.findtext("id")
+                    name = (dep.findtext("name") or "").strip()
+                    code = (dep.findtext("code") or "").strip()
+                    if s_id and name:
+                        stores.append(
+                            {
+                                "id": s_id,
+                                "name": name,
+                                "code": code,
+                            }
+                        )
+                sorted_stores = sorted(stores, key=lambda st: st["name"])
+                if self.redis_client and sorted_stores:
+                    try:
+                        self.redis_client.setex(
+                            cache_key, 3600, json.dumps(sorted_stores, ensure_ascii=False)
+                        )
+                    except Exception:
+                        pass
+                return sorted_stores
+        finally:
             try:
-                self.redis_client.setex(
-                    cache_key, 600, json.dumps(sorted_stores, ensure_ascii=False)
-                )
+                requests.get(f"{self.base_url}/api/logout", params={"key": token}, timeout=5)
             except Exception:
                 pass
-        return sorted_stores
 
     def upload_invoice(self, target_store_id: str, xml_payload: str):
         # Safety guardrail dynamically validating against managed stores in database

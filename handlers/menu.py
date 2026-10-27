@@ -94,14 +94,9 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
         else "<i>❌ Не настроен</i>"
     )
 
-    stores = await get_all_managed_stores()
-    store_map = {s["store_id"]: s["name"] for s in stores}
-    def_store_id = user.get("default_store_id")
-    store_name = (
-        store_map.get(def_store_id, "Не выбран (выбор при каждой накладной)")
-        if def_store_id
-        else "Не выбран"
-    )
+    from storage import get_user_stores
+    user_stores = await get_user_stores(user_id)
+    stores_str = ", ".join(s["name"] for s in user_stores) if user_stores else "<i>Нет подключенных точек</i>"
 
     role_str = "👑 Администратор" if user.get("role") == "admin" else "👤 Оператор"
 
@@ -113,7 +108,7 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
         ),
         role=role_str,
         creds_status=creds_status,
-        default_store=store_name,
+        default_store=stores_str,
     )
     await callback.message.edit_text(
         text, reply_markup=get_cabinet_kb(has_creds=has_creds), parse_mode="HTML"
@@ -306,29 +301,65 @@ async def process_clear_credentials(callback: types.CallbackQuery, state: FSMCon
     await process_open_cabinet(callback, state)
 
 
-@router.callback_query(F.data == "cab:choose_store")
-async def process_choose_default_store(callback: types.CallbackQuery):
-    """Presents list of restaurant stores to pick primary workstation."""
+@router.callback_query(F.data == "cab:my_stores")
+async def process_view_my_stores(callback: types.CallbackQuery):
+    """Displays interactive toggle list of iikoChain restaurants for operator."""
     user = await get_bot_user(callback.from_user.id)
-    stores = await get_all_managed_stores()
-    current_store_id = user.get("default_store_id") if user else None
+    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
+        from keyboards.invoices_kb import get_setup_creds_kb
+        await callback.message.edit_text(
+            t("invoice_no_creds_error"),
+            reply_markup=get_setup_creds_kb("setup"),
+            parse_mode="HTML",
+        )
+        return
+
+    login = user["iiko_login"]
+    try:
+        password = decrypt_secret(user["iiko_password_encrypted"])
+    except Exception:
+        await callback.answer(t("cab_creds_empty"), show_alert=True)
+        return
+
+    # Fetch stores from iiko API under operator credentials
+    stores = await asyncio.to_thread(client.get_iiko_departments_for_user, login, password)
+    if not stores:
+        await callback.answer("В iikoChain не найдено складов или нет прав доступа.", show_alert=True)
+        return
+
+    from storage import get_user_stores
+    from keyboards.menu_kb import get_user_stores_toggle_kb
+
+    user_stores = await get_user_stores(callback.from_user.id)
+    connected_ids = {s["store_id"] for s in user_stores}
 
     await callback.message.edit_text(
-        t("cab_choose_store_title"),
-        reply_markup=get_default_store_selection_kb(stores, current_store_id),
+        t("cab_my_stores_title"),
+        reply_markup=get_user_stores_toggle_kb(stores, connected_ids),
         parse_mode="HTML",
     )
 
 
-@router.callback_query(F.data.startswith("cab:store:"))
-async def process_save_default_store(callback: types.CallbackQuery, state: FSMContext):
-    """Persists chosen default restaurant store to user profile."""
+@router.callback_query(F.data.startswith("cab:toggle_store:"))
+async def process_toggle_store(callback: types.CallbackQuery):
+    """Toggles restaurant connection state for operator."""
     store_id = callback.data.split(":")[2]
-    new_store_id = None if store_id == "none" else store_id
+    user = await get_bot_user(callback.from_user.id)
+    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
+        return
 
-    await update_user_default_store(callback.from_user.id, new_store_id)
-    await callback.answer(t("cab_store_saved"), show_alert=True)
-    await process_open_cabinet(callback, state)
+    login = user["iiko_login"]
+    password = decrypt_secret(user["iiko_password_encrypted"])
+    stores = await asyncio.to_thread(client.get_iiko_departments_for_user, login, password)
+    target_store = next((s for s in stores if s["id"] == store_id), None)
+    target_name = target_store["name"] if target_store else "Склад iiko"
+
+    from storage import toggle_user_store
+    is_connected = await toggle_user_store(callback.from_user.id, store_id, target_name)
+
+    msg = f"✅ Точка «{target_name}» подключена!" if is_connected else f"Точка «{target_name}» отключена."
+    await callback.answer(msg)
+    await process_view_my_stores(callback)
 
 
 @router.callback_query(F.data == "cab:cancel_input")

@@ -99,7 +99,7 @@ async def cleanup_session_data(doc_id: str) -> None:
 
 @router.message(F.document)
 async def handle_document_upload(message: types.Message):
-    """Entrypoint for incoming XML and PDF supplier invoices."""
+    """Entrypoint for incoming invoices. Validates connected stores first before any parsing."""
     doc = message.document
     filename = doc.file_name or "unknown_file"
     ext = os.path.splitext(filename)[1].lower()
@@ -108,121 +108,181 @@ async def handle_document_upload(message: types.Message):
         await message.answer(t("invoice_invalid_format"))
         return
 
-    status_msg = await message.answer(t("invoice_parsing_wait", filename=filename))
+    # Fail-Fast: verify operator has connected stores
+    from storage import get_user_stores, get_bot_user
+    operator = await get_bot_user(message.from_user.id)
+    if not operator or not operator.get("iiko_login") or not operator.get("iiko_password_encrypted"):
+        from keyboards.invoices_kb import get_setup_creds_kb
+        await message.answer(t("invoice_no_creds_error"), reply_markup=get_setup_creds_kb("setup"), parse_mode="HTML")
+        return
+
+    user_stores = await get_user_stores(message.from_user.id)
+    if not user_stores:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text=t("btn_connect_stores"), callback_data="cab:my_stores")]]
+        )
+        await message.answer(t("invoice_no_stores_error"), reply_markup=kb, parse_mode="HTML")
+        return
 
     doc_id = str(uuid.uuid4())[:8]
     temp_path = os.path.join(TMP_DIR, f"{doc_id}_{filename}")
+    await message.bot.download(doc.file_id, destination=temp_path)
+
+    # Initial session without store assigned yet
+    session_data = {
+        "doc_id": doc_id,
+        "user_id": message.from_user.id,
+        "filename": filename,
+        "ext": ext,
+        "file_path": temp_path,
+        "store_id": None,
+        "store_name": None,
+        "parsed_doc": None,
+        "total_sum": 0.0,
+        "supplier_id": None,
+        "supplier_name": None,
+        "matched_items": [],
+        "unresolved_items": [],
+    }
+    await save_invoice_session(doc_id, message.from_user.id, session_data)
+
+    # Single store connected -> Auto-select and proceed directly
+    if len(user_stores) == 1:
+        chosen_store = user_stores[0]
+        status_msg = await message.answer(
+            f"📍 Ресторан: <b>{chosen_store['name']}</b> (автовыбор)\n"
+            + t("invoice_parsing_wait", filename=filename)
+        )
+        await execute_parse_and_alignment(status_msg, doc_id, chosen_store["store_id"], chosen_store["name"])
+    else:
+        # Multiple stores connected -> Operator must choose target store FIRST
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        rows = []
+        for s in user_stores:
+            rows.append([InlineKeyboardButton(text=f"🏢 {s['name']}", callback_data=f"inv:init_store:{doc_id}:{s['store_id']}")])
+        rows.append([InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")])
+
+        await message.answer(
+            t("invoice_select_store_first", filename=filename),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.startswith("inv:init_store:"))
+async def process_initial_store_choice(callback: types.CallbackQuery):
+    """Records chosen target store first and initiates document parsing."""
+    parts = callback.data.split(":")
+    doc_id, store_id = parts[2], parts[3]
+
+    session = await get_invoice_session(doc_id)
+    if not session:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    from storage import get_user_stores
+    user_stores = await get_user_stores(callback.from_user.id)
+    chosen = next((s for s in user_stores if s["store_id"] == store_id), None)
+    store_name = chosen["name"] if chosen else "Склад"
+
+    await callback.message.edit_text(
+        f"📍 Ресторан: <b>{store_name}</b>\n"
+        + t("invoice_parsing_wait", filename=session.get("filename", "документ"))
+    )
+    await execute_parse_and_alignment(callback.message, doc_id, store_id, store_name)
+
+
+async def execute_parse_and_alignment(message: types.Message, doc_id: str, store_id: str, store_name: str):
+    """Executes document parsing and advances directly to item alignment."""
+    session = await get_invoice_session(doc_id)
+    temp_path = session["file_path"]
 
     try:
-        logger.info(
-            f"Incoming document from user {message.from_user.id} ({message.from_user.full_name}): '{filename}'"
-        )
-        await message.bot.download(doc.file_id, destination=temp_path)
         parsed_doc = await asyncio.to_thread(parse_document, temp_path)
-
         if not parsed_doc or not parsed_doc.items:
             raise ValueError("Документ не содержит товарных позиций или поврежден.")
 
         total_sum = sum(it.sum for it in parsed_doc.items)
-        logger.info(
-            f"Document parsed successfully: Doc #{parsed_doc.doc_number}, supplier='{parsed_doc.supplier_name}', items={len(parsed_doc.items)}, total={total_sum:.2f} RUB"
-        )
-
-        session_data = {
-            "doc_id": doc_id,
-            "user_id": message.from_user.id,
-            "parsed_doc": {
-                "doc_number": parsed_doc.doc_number,
-                "doc_date": parsed_doc.doc_date,
-                "supplier_inn": parsed_doc.supplier_inn,
-                "supplier_name": parsed_doc.supplier_name,
-                "consignee_address": parsed_doc.consignee_address,
-                "source_file": temp_path,
-                "items": [
-                    {
-                        "line_num": it.line_num,
-                        "raw_name": it.raw_name,
-                        "article": it.article,
-                        "quantity": it.quantity,
-                        "price": it.price,
-                        "sum": it.sum,
-                        "vat_rate": it.vat_rate,
-                    }
-                    for it in parsed_doc.items
-                ],
-            },
-            "file_path": temp_path,
-            "total_sum": total_sum,
-            "store_id": None,
-            "store_name": None,
-            "supplier_id": None,
-            "supplier_name": None,
-            "matched_items": [],
-            "unresolved_items": [],
+        session["store_id"] = store_id
+        session["store_name"] = store_name
+        session["total_sum"] = total_sum
+        session["parsed_doc"] = {
+            "doc_number": parsed_doc.doc_number,
+            "doc_date": parsed_doc.doc_date,
+            "supplier_inn": parsed_doc.supplier_inn,
+            "supplier_name": parsed_doc.supplier_name,
+            "consignee_address": parsed_doc.consignee_address,
+            "source_file": temp_path,
+            "items": [
+                {
+                    "line_num": it.line_num,
+                    "raw_name": it.raw_name,
+                    "article": it.article,
+                    "quantity": it.quantity,
+                    "price": it.price,
+                    "sum": it.sum,
+                    "vat_rate": it.vat_rate,
+                }
+                for it in parsed_doc.items
+            ],
         }
-        await save_invoice_session(doc_id, message.from_user.id, session_data)
+        await save_invoice_session(doc_id, session["user_id"], session)
 
-        from storage import get_bot_user
+        # Resolve Supplier via INN preference or directory
+        supplier_inn = (parsed_doc.supplier_inn or "").strip()
+        pref = await get_preferred_supplier(supplier_inn) if supplier_inn else None
 
-        db_user = await get_bot_user(message.from_user.id)
-        default_store_id = db_user.get("default_store_id") if db_user else None
-        allowed_stores = await get_allowed_stores()
-
-        if ext == ".pdf":
-            # Generate preview of extracted lines for visual verification
-            preview_lines = []
-            for it in parsed_doc.items[:15]:
-                name = it.raw_name[:32]
-                preview_lines.append(
-                    f"{it.line_num}. {name} — {it.quantity:.2f} × {it.price:.2f} ₽ = {it.sum:.2f} ₽"
-                )
-            if len(parsed_doc.items) > 15:
-                preview_lines.append(
-                    f"<i>...и еще {len(parsed_doc.items) - 15} позиций</i>"
-                )
-
-            from keyboards.invoices_kb import get_pdf_confirmation_kb
-
-            await status_msg.edit_text(
-                t(
-                    "pdf_verification_card",
-                    doc_number=parsed_doc.doc_number or "Б/Н",
-                    doc_date=parsed_doc.doc_date,
-                    supplier_name=parsed_doc.supplier_name or "Не определен",
-                    supplier_inn=parsed_doc.supplier_inn or "Не определен",
-                    total_sum=total_sum,
-                    items_count=len(parsed_doc.items),
-                    items_preview="\n".join(preview_lines),
-                ),
-                reply_markup=get_pdf_confirmation_kb(doc_id),
-            )
+        if pref:
+            session["supplier_id"], session["supplier_name"] = pref[0], pref[1]
+            await save_invoice_session(doc_id, session["user_id"], session)
         else:
-            from keyboards.invoices_kb import get_store_selection_kb
+            suppliers_grouped = await get_cached_suppliers()
+            candidates = suppliers_grouped.get(supplier_inn, []) if supplier_inn else []
 
-            await status_msg.edit_text(
-                t(
-                    "invoice_card",
-                    doc_number=parsed_doc.doc_number or "Б/Н",
-                    doc_date=parsed_doc.doc_date,
-                    supplier_name=parsed_doc.supplier_name,
-                    supplier_inn=parsed_doc.supplier_inn,
-                    total_sum=total_sum,
-                    items_count=len(parsed_doc.items),
-                ),
-                reply_markup=get_store_selection_kb(
-                    doc_id, allowed_stores, default_store_id
-                ),
-            )
+            if not candidates:
+                all_suppliers = [s for supp_list in suppliers_grouped.values() for s in supp_list]
+                supp_names = [s["name"] for s in all_suppliers]
+                raw_supp_name = parsed_doc.supplier_name
+                top_matches = process.extract(raw_supp_name, supp_names, limit=4, scorer=fuzz.token_sort_ratio)
+
+                fuzzy_candidates = []
+                for name, score, _ in top_matches:
+                    if score >= 45:
+                        match_supp = next((s for s in all_suppliers if s["name"] == name), None)
+                        if match_supp and match_supp not in fuzzy_candidates:
+                            fuzzy_candidates.append({**match_supp, "score": score})
+
+                if fuzzy_candidates:
+                    from keyboards.invoices_kb import get_fuzzy_supplier_kb
+                    await message.edit_text(
+                        t("invoice_supplier_not_found_fuzzy", inn=supplier_inn or "Не указан", raw_name=raw_supp_name),
+                        reply_markup=get_fuzzy_supplier_kb(doc_id, fuzzy_candidates),
+                    )
+                    return
+                else:
+                    await message.edit_text(t("invoice_supplier_none_matched", raw_name=raw_supp_name, inn=supplier_inn or "Не указан"))
+                    await cleanup_session_data(doc_id)
+                    return
+
+            if len(candidates) == 1:
+                session["supplier_id"] = candidates[0]["id"]
+                session["supplier_name"] = candidates[0]["name"]
+                await save_invoice_session(doc_id, session["user_id"], session)
+            else:
+                from keyboards.invoices_kb import get_supplier_disambiguation_kb
+                await message.edit_text(
+                    t("invoice_supplier_conflict", inn=supplier_inn),
+                    reply_markup=get_supplier_disambiguation_kb(doc_id, candidates),
+                )
+                return
+
+        await proceed_with_item_alignment(message, doc_id)
 
     except Exception as e:
-        if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
-        delete_invoice_session(doc_id)
-        logger.exception(f"Document parsing error for '{filename}': {e}")
-        await status_msg.edit_text(t("invoice_parsing_error", error=str(e)))
+        logger.exception(f"Document parsing error for {temp_path}: {e}")
+        await cleanup_session_data(doc_id)
+        await message.edit_text(t("invoice_parsing_error", error=str(e)))
 
 
 @router.callback_query(F.data.startswith("inv:pdf_ok:"))

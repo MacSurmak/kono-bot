@@ -87,11 +87,6 @@ def get_admin_main_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text=t("admin_btn_stores"), callback_data="admin:manage_stores"
-                )
-            ],
-            [
-                InlineKeyboardButton(
                     text=t("admin_btn_mappings"), callback_data="admin:manage_mappings"
                 )
             ],
@@ -153,90 +148,6 @@ def get_training_confirmation_kb(batch_id: str, new_count: int) -> InlineKeyboar
             ],
         ]
     )
-
-
-def get_admin_stores_kb(stores: list) -> InlineKeyboardMarkup:
-    """Constructs list of managed stores with delete options."""
-    rows = []
-    for s in stores:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"🏢 {s['name'][:24]}", callback_data="admin:noop"
-                ),
-                InlineKeyboardButton(
-                    text="🗑 Удалить", callback_data=f"admin:del_st:{s['store_id']}"
-                ),
-            ]
-        )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=t("admin_btn_add_store"), callback_data="admin:add_st:0"
-            )
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=t("admin_btn_back"), callback_data="admin:back_main"
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def get_iiko_import_stores_kb(
-    available_stores: list, page: int = 0, page_size: int = 6
-) -> InlineKeyboardMarkup:
-    """Constructs paginated selection buttons for adding stores discovered from iiko API."""
-    total = len(available_stores)
-    start = page * page_size
-    end = start + page_size
-    current_page_items = available_stores[start:end]
-
-    rows = []
-    for s in current_page_items:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"➕ {s['name'][:32]}", callback_data=f"admin:st_add:{s['id']}"
-                )
-            ]
-        )
-
-    nav_row = []
-    if page > 0:
-        nav_row.append(
-            InlineKeyboardButton(
-                text="⬅️ Назад", callback_data=f"admin:add_st:{page - 1}"
-            )
-        )
-    if end < total:
-        nav_row.append(
-            InlineKeyboardButton(
-                text="Вперед ➡️", callback_data=f"admin:add_st:{page + 1}"
-            )
-        )
-    if nav_row:
-        rows.append(nav_row)
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=t("admin_btn_manual_store"),
-                callback_data="admin:manual_store_prompt",
-            )
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=t("admin_btn_back"), callback_data="admin:manage_stores"
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_admin_mappings_kb(results: list) -> InlineKeyboardMarkup:

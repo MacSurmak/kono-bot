@@ -117,10 +117,11 @@ async def process_view_user_card(callback: types.CallbackQuery):
     from storage import get_all_managed_stores
     from config import get_admin_ids
 
+    from storage import get_user_stores
+
     is_primary = target_id in get_admin_ids()
-    stores = await get_all_managed_stores()
-    store_map = {s["store_id"]: s["name"] for s in stores}
-    def_store = store_map.get(target_user.get("default_store_id"), "Не выбран")
+    user_stores = await get_user_stores(target_id)
+    stores_str = ", ".join(s["name"] for s in user_stores) if user_stores else "Нет подключенных точек"
 
     role_str = "👑 Администратор" if target_user["role"] == "admin" else "👤 Оператор"
     status_str = "🟢 Активен" if target_user["is_active"] else "🔴 Заблокирован"
@@ -134,7 +135,7 @@ async def process_view_user_card(callback: types.CallbackQuery):
         role_str=role_str,
         status_str=status_str,
         iiko_login=login_str,
-        default_store=def_store,
+        default_store=stores_str,
     )
 
     await callback.message.edit_text(
@@ -200,141 +201,6 @@ async def process_back_main(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         t("admin_panel_title"), reply_markup=get_admin_main_kb(), parse_mode="HTML"
     )
-
-
-# ================= STORE MANAGEMENT HANDLERS =================
-@router.callback_query(F.data == "admin:manage_stores")
-async def process_manage_stores(callback: types.CallbackQuery, state: FSMContext):
-    """Displays active managed stores with deletion controls."""
-    if not await is_admin_user(callback.from_user.id):
-        await callback.answer(t("admin_access_denied"), show_alert=True)
-        return
-
-    await state.clear()
-    stores = await get_all_managed_stores()
-    if not stores:
-        text = t("admin_stores_empty")
-    else:
-        text = t("admin_stores_title") + "\n".join(
-            f"• <b>{s['name']}</b> (<code>{s['store_id']}</code>)" for s in stores
-        )
-
-    await callback.message.edit_text(
-        text, reply_markup=get_admin_stores_kb(stores), parse_mode="HTML"
-    )
-
-
-@router.callback_query(F.data.startswith("admin:del_st:"))
-async def process_delete_store(callback: types.CallbackQuery):
-    """Removes a store from active managed list."""
-    if not await is_admin_user(callback.from_user.id):
-        return
-    store_id = callback.data.split(":")[2]
-    await delete_managed_store(store_id)
-    logger.info(f"Admin {callback.from_user.id} removed store {store_id}")
-    await callback.answer(t("admin_store_deleted_success"), show_alert=True)
-
-    stores = await get_all_managed_stores()
-    text = t("admin_stores_title") + "\n".join(
-        f"• <b>{s['name']}</b> (<code>{s['store_id']}</code>)" for s in stores
-    )
-    await callback.message.edit_text(
-        text, reply_markup=get_admin_stores_kb(stores), parse_mode="HTML"
-    )
-
-
-@router.callback_query(F.data.startswith("admin:add_st:"))
-async def process_add_store_menu(callback: types.CallbackQuery):
-    """Fetches candidate stores from /api/corporation/stores with pagination."""
-    if not await is_admin_user(callback.from_user.id):
-        return
-
-    page = int(callback.data.split(":")[2])
-    managed_stores = await get_all_managed_stores()
-    existing_store_ids = {s["store_id"] for s in managed_stores}
-    iiko_stores = client.get_iiko_departments()
-    available_to_add = [d for d in iiko_stores if d["id"] not in existing_store_ids]
-
-    if available_to_add:
-        await callback.message.edit_text(
-            t("admin_iiko_stores_available"),
-            reply_markup=get_iiko_import_stores_kb(available_to_add, page=page),
-            parse_mode="HTML",
-        )
-    else:
-        await callback.message.edit_text(
-            t("admin_iiko_no_new_stores"),
-            reply_markup=get_iiko_import_stores_kb([], page=0),
-            parse_mode="HTML",
-        )
-
-
-@router.callback_query(F.data.startswith("admin:st_add:"))
-async def process_store_import(callback: types.CallbackQuery):
-    """Adds a store discovered from iiko API to managed stores using safe ID lookup."""
-    if not await is_admin_user(callback.from_user.id):
-        return
-    store_id = callback.data.split(":")[2]
-    iiko_stores = client.get_iiko_departments()
-    store = next((s for s in iiko_stores if s["id"] == store_id), None)
-    name = store["name"] if store else "Склад iiko"
-
-    await add_managed_store(store_id, name)
-    logger.info(
-        f"Admin {callback.from_user.id} imported store from iiko: {name} ({store_id})"
-    )
-    await callback.answer(t("admin_store_added_success", name=name), show_alert=True)
-
-    stores = await get_all_managed_stores()
-    text = t("admin_stores_title") + "\n".join(
-        f"• <b>{s['name']}</b> (<code>{s['store_id']}</code>)" for s in stores
-    )
-    await callback.message.edit_text(
-        text, reply_markup=get_admin_stores_kb(stores), parse_mode="HTML"
-    )
-
-
-@router.callback_query(F.data == "admin:manual_store_prompt")
-async def process_manual_store_prompt(callback: types.CallbackQuery, state: FSMContext):
-    """Sets FSM state waiting for manual store UUID and name."""
-    if not await is_admin_user(callback.from_user.id):
-        return
-    await state.set_state(AdminState.waiting_manual_store)
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-    cancel_kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=t("admin_btn_back"), callback_data="admin:manage_stores"
-                )
-            ]
-        ]
-    )
-    await callback.message.edit_text(
-        t("admin_store_manual_prompt"), reply_markup=cancel_kb, parse_mode="HTML"
-    )
-
-
-@router.message(AdminState.waiting_manual_store)
-async def handle_manual_store_input(message: types.Message, state: FSMContext):
-    """Parses and registers manually entered store GUID and name."""
-    if not await is_admin_user(message.from_user.id):
-        return
-    text = message.text.strip()
-    parts = text.split(maxsplit=1)
-
-    if len(parts) != 2 or len(parts[0]) < 32:
-        await message.answer(t("admin_store_invalid_format"))
-        return
-
-    store_id, name = parts[0].strip(), parts[1].strip()
-    await add_managed_store(store_id, name)
-    logger.info(
-        f"Admin {message.from_user.id} manually added store: {name} ({store_id})"
-    )
-    await state.clear()
-    await message.answer(t("admin_store_added_success", name=name), parse_mode="HTML")
 
 
 # ================= KNOWLEDGE BASE MAPPING REMOVAL HANDLERS =================

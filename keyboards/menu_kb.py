@@ -58,7 +58,7 @@ def get_cabinet_kb(has_creds: bool) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text=t("cab_btn_default_store"), callback_data="cab:choose_store"
+                text=t("cab_btn_my_stores"), callback_data="cab:my_stores"
             )
         ]
     )
@@ -75,28 +75,21 @@ def get_cabinet_kb(has_creds: bool) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def get_default_store_selection_kb(
-    stores: List[Dict[str, Any]], current_store_id: Optional[str]
+def get_user_stores_toggle_kb(
+    all_stores: List[Dict[str, Any]], connected_store_ids: set
 ) -> InlineKeyboardMarkup:
-    """Constructs selection list for choosing user's primary restaurant branch."""
+    """Constructs store list with checkboxes allowing operators to toggle their workplace restaurants."""
     rows = []
-    for s in stores:
-        s_id = s["store_id"]
+    for s in all_stores:
+        s_id = s["id"]
         s_name = s["name"]
-        prefix = "✅ " if s_id == current_store_id else "🏢 "
+        is_conn = s_id in connected_store_ids
+        prefix = "✅ " if is_conn else "⬜ "
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{prefix}{s_name}", callback_data=f"cab:store:{s_id}"
-                )
-            ]
-        )
-
-    if current_store_id:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=t("cab_btn_reset_store"), callback_data="cab:store:none"
+                    text=f"{prefix}{s_name}",
+                    callback_data=f"cab:toggle_store:{s_id}",
                 )
             ]
         )
