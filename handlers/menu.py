@@ -411,3 +411,9 @@ async def process_cancel_input(callback: types.CallbackQuery, state: FSMContext)
     """Aborts credential input and returns to cabinet."""
     await state.clear()
     await process_open_cabinet(callback, state)
+
+
+@router.callback_query(F.data == "noop")
+async def process_noop(callback: types.CallbackQuery):
+    """Silently handles non-interactive pagination indicator clicks."""
+    await callback.answer()

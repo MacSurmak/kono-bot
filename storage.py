@@ -594,6 +594,22 @@ async def search_mappings_for_admin_paginated(
     return results, total or 0
 
 
+async def search_mappings_for_admin(
+    query: str, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """Backward-compatible unpaginated search query."""
+    results, _ = await search_mappings_for_admin_paginated(query, offset=0, limit=limit)
+    return results
+
+
+async def get_user_recent_mappings(
+    user_id: int, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """Backward-compatible helper returning recent user mappings."""
+    mappings, _ = await get_user_mappings(user_id, offset=0, limit=limit)
+    return mappings
+
+
 async def delete_mapping_by_id(mapping_id: int) -> bool:
     pool = get_db_pool()
     res = await pool.execute("DELETE FROM supplier_mappings WHERE id = $1;", mapping_id)
