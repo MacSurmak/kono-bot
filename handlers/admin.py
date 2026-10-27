@@ -47,6 +47,18 @@ async def handle_admin_panel(message: types.Message):
     )
 
 
+@router.callback_query(F.data == "admin:open")
+async def process_admin_open_callback(callback: types.CallbackQuery):
+    """Opens admin panel from main interactive menu button."""
+    if callback.from_user.id not in get_configured_admin_ids():
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        t("admin_panel_title"), reply_markup=get_admin_main_kb(), parse_mode="HTML"
+    )
+
+
 @router.callback_query(F.data == "admin:create_invite")
 async def process_create_invite(callback: types.CallbackQuery):
     """Generates secure one-time invite deep-link."""
@@ -57,7 +69,7 @@ async def process_create_invite(callback: types.CallbackQuery):
     from loguru import logger
 
     bot_info = await callback.bot.get_me()
-    token = create_invite_token(created_by=callback.from_user.id)
+    token = await create_invite_token(created_by=callback.from_user.id)
     invite_url = f"https://t.me/{bot_info.username}?start=inv_{token}"
 
     logger.info(f"Admin {callback.from_user.id} generated a new invite token: {token}")
@@ -73,7 +85,7 @@ async def process_list_users(callback: types.CallbackQuery):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
 
-    users = get_all_bot_users()
+    users = await get_all_bot_users()
     if not users:
         await callback.message.answer(t("admin_users_empty"))
         return
@@ -109,7 +121,7 @@ async def process_manage_stores(callback: types.CallbackQuery, state: FSMContext
         return
 
     await state.clear()
-    stores = get_all_managed_stores()
+    stores = await get_all_managed_stores()
     if not stores:
         text = t("admin_stores_empty")
     else:
@@ -128,11 +140,11 @@ async def process_delete_store(callback: types.CallbackQuery):
     if callback.from_user.id not in get_configured_admin_ids():
         return
     store_id = callback.data.split(":")[2]
-    delete_managed_store(store_id)
+    await delete_managed_store(store_id)
     logger.info(f"Admin {callback.from_user.id} removed store {store_id}")
     await callback.answer(t("admin_store_deleted_success"), show_alert=True)
 
-    stores = get_all_managed_stores()
+    stores = await get_all_managed_stores()
     text = t("admin_stores_title") + "\n".join(
         f"• <b>{s['name']}</b> (<code>{s['store_id']}</code>)" for s in stores
     )
@@ -148,7 +160,8 @@ async def process_add_store_menu(callback: types.CallbackQuery):
         return
 
     page = int(callback.data.split(":")[2])
-    existing_store_ids = {s["store_id"] for s in get_all_managed_stores()}
+    managed_stores = await get_all_managed_stores()
+    existing_store_ids = {s["store_id"] for s in managed_stores}
     iiko_stores = client.get_iiko_departments()
     available_to_add = [d for d in iiko_stores if d["id"] not in existing_store_ids]
 
@@ -176,13 +189,13 @@ async def process_store_import(callback: types.CallbackQuery):
     store = next((s for s in iiko_stores if s["id"] == store_id), None)
     name = store["name"] if store else "Склад iiko"
 
-    add_managed_store(store_id, name)
+    await add_managed_store(store_id, name)
     logger.info(
         f"Admin {callback.from_user.id} imported store from iiko: {name} ({store_id})"
     )
     await callback.answer(t("admin_store_added_success", name=name), show_alert=True)
 
-    stores = get_all_managed_stores()
+    stores = await get_all_managed_stores()
     text = t("admin_stores_title") + "\n".join(
         f"• <b>{s['name']}</b> (<code>{s['store_id']}</code>)" for s in stores
     )
@@ -226,7 +239,7 @@ async def handle_manual_store_input(message: types.Message, state: FSMContext):
         return
 
     store_id, name = parts[0].strip(), parts[1].strip()
-    add_managed_store(store_id, name)
+    await add_managed_store(store_id, name)
     logger.info(
         f"Admin {message.from_user.id} manually added store: {name} ({store_id})"
     )
@@ -263,7 +276,7 @@ async def handle_search_mapping_input(message: types.Message, state: FSMContext)
     if message.from_user.id not in get_configured_admin_ids():
         return
     query = message.text.strip()
-    results = search_mappings_for_admin(query, limit=8)
+    results = await search_mappings_for_admin(query, limit=8)
 
     if not results:
         await message.answer(t("admin_search_mapping_empty", query=query))
@@ -283,7 +296,7 @@ async def process_delete_mapping(callback: types.CallbackQuery):
     if callback.from_user.id not in get_configured_admin_ids():
         return
     mapping_id = int(callback.data.split(":")[2])
-    success = delete_mapping_by_id(mapping_id)
+    success = await delete_mapping_by_id(mapping_id)
     if success:
         logger.info(
             f"Admin {callback.from_user.id} deleted mapping #{mapping_id} from knowledge base"

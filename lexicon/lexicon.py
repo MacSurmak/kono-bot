@@ -169,10 +169,21 @@ LEXICON: Dict[str, str] = {
     "btn_coeff_half": "x0.5",
 }
 
+    # Main Navigation Menu
+    "menu_main_title": (
+        "📱 <b>Главное меню KONO Supply:</b>\n\n"
+        "Выберите необходимое действие с помощью кнопок ниже:"
+    ),
+    "menu_btn_upload": "📄 Загрузить накладную (XML / PDF)",
+    "menu_btn_cabinet": "⚙️ Личный кабинет / Настройки iiko",
+    "menu_btn_help": "ℹ️ Инструкция и статус",
+    "menu_btn_admin": "👑 Панель администратора сети",
+}
+
 LEXICON_COMMANDS: Dict[str, str] = {
-    "/start": "Главное меню / Старт",
+    "/menu": "Главное меню управления",
     "/help": "Инструкция по накладным",
-    "/admin": "Панель управления доступом",
+    "/admin": "Панель администратора сети",
 }
 
 

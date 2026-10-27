@@ -33,4 +33,12 @@ class ThrottlingMiddleware(BaseMiddleware):
             return None
 
         self._user_last_action[user.id] = now
+
+        # Periodic garbage cleanup of stale user timestamps
+        if len(self._user_last_action) > 1000:
+            threshold = now - 60.0
+            self._user_last_action = {
+                uid: ts for uid, ts in self._user_last_action.items() if ts > threshold
+            }
+
         return await handler(event, data)

@@ -23,7 +23,7 @@ class AuthMiddleware(BaseMiddleware):
         # Automatically bootstrap SuperAdmins from configuration
         admin_ids = get_configured_admin_ids()
         if user.id in admin_ids:
-            upsert_bot_user(
+            await upsert_bot_user(
                 telegram_id=user.id,
                 username=user.username,
                 full_name=user.full_name,
@@ -33,15 +33,11 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Allow /start with invite payload to reach handler for activation
-        if (
-            isinstance(event, Message)
-            and event.text
-            and event.text.startswith("/start inv_")
-        ):
+        if isinstance(event, Message) and event.text and event.text.startswith("/start inv_"):
             return await handler(event, data)
 
         # Check existing user authorization
-        db_user = get_bot_user(user.id)
+        db_user = await get_bot_user(user.id)
         if db_user and db_user["is_active"]:
             data["user_role"] = db_user["role"]
             return await handler(event, data)

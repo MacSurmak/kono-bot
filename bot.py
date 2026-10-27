@@ -26,7 +26,7 @@ async def run_garbage_collector():
     while True:
         try:
             await asyncio.sleep(900)  # Every 15 minutes
-            stale_doc_ids = await asyncio.to_thread(cleanup_stale_sessions, 3600)
+            stale_doc_ids = await cleanup_stale_sessions(3600)
             if stale_doc_ids:
                 cleaned_files = 0
                 if os.path.exists(TMP_DIR):
@@ -67,17 +67,28 @@ async def main():
     bot_token = cfg["telegram"]["bot_token"]
     bot = Bot(token=bot_token, default=DefaultBotProperties(parse_mode="HTML"))
 
+    import os
+    from aiogram.fsm.storage.redis import RedisStorage
     from aiogram.utils.callback_answer import CallbackAnswerMiddleware
     from middlewares.throttling import ThrottlingMiddleware
+    from middlewares.auth import AuthMiddleware
     from lexicon import set_bot_commands
 
-    # In-memory FSM storage is completely sufficient and self-contained for local deployment
-    dp = Dispatcher(storage=MemoryStorage())
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    storage = RedisStorage.from_url(redis_url)
+    dp = Dispatcher(storage=storage)
 
-    # Register middlewares in strict sequential order
+    # Register middlewares on concrete event buses to guarantee exact object typing
     dp.callback_query.middleware(CallbackAnswerMiddleware())
-    dp.update.middleware(ThrottlingMiddleware(rate_limit=0.5))
-    dp.update.middleware(AuthMiddleware())
+
+    throttler = ThrottlingMiddleware(rate_limit=0.5)
+    auth_guard = AuthMiddleware()
+
+    dp.message.middleware(throttler)
+    dp.callback_query.middleware(throttler)
+
+    dp.message.middleware(auth_guard)
+    dp.callback_query.middleware(auth_guard)
 
     # Include main handlers
     dp.include_router(main_router)
