@@ -1,18 +1,19 @@
+import os
+import shutil
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 from loguru import logger
 
 from config import cfg
-from storage import init_db
+from storage import init_db, close_db, cleanup_stale_sessions
 from middlewares.auth import AuthMiddleware
+from middlewares.throttling import ThrottlingMiddleware
 from handlers import main_router
+from lexicon import set_bot_commands
 from services.logger import setup_logger
-
-
-import os
-import shutil
 
 TMP_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "in", "telegram_tmp"
@@ -69,13 +70,6 @@ async def main():
     bot_token = cfg["telegram"]["bot_token"]
     bot = Bot(token=bot_token, default=DefaultBotProperties(parse_mode="HTML"))
 
-    import os
-    from aiogram.fsm.storage.redis import RedisStorage
-    from aiogram.utils.callback_answer import CallbackAnswerMiddleware
-    from middlewares.throttling import ThrottlingMiddleware
-    from middlewares.auth import AuthMiddleware
-    from lexicon import set_bot_commands
-
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     storage = RedisStorage.from_url(redis_url)
     dp = Dispatcher(storage=storage)
@@ -100,8 +94,6 @@ async def main():
 
     logger.info("Starting Telegram Bot long-polling...")
     await bot.delete_webhook(drop_pending_updates=True)
-
-    from storage import close_db
 
     gc_task = asyncio.create_task(run_garbage_collector())
     try:
