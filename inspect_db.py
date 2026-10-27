@@ -82,7 +82,9 @@ def inspect(search_query: str = ""):
     if not rows:
         print("   No records found.")
     else:
-        print(f"{'VOTES':<8} | {'COEFF':<7} | {'INVOICE RAW NAME':<36} | {'IIKO PRODUCT NAME':<33}")
+        print(
+            f"{'VOTES':<8} | {'COEFF':<7} | {'INVOICE RAW NAME':<36} | {'IIKO PRODUCT NAME':<33}"
+        )
         print("-" * 92)
         for r in rows:
             votes = f"x{r[3]}"

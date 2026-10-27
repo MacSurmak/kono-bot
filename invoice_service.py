@@ -144,7 +144,9 @@ def build_iiko_xml(
     for it in matched_items:
         coeff = float(it.get("coefficient", 1.0) or 1.0)
         final_amount = round(it["amount"] * coeff, 4)
-        final_price = round(it["sum"] / final_amount, 4) if final_amount > 0 else it["price"]
+        final_price = (
+            round(it["sum"] / final_amount, 4) if final_amount > 0 else it["price"]
+        )
 
         item_blocks.append(f"""
         <item>

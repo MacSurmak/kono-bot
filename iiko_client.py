@@ -35,7 +35,9 @@ class IikoClient:
         """Executes HTTP request and transparently refreshes session on token expiration."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         resp = self.session.request(method, url, **kwargs)
-        if resp.status_code == 401 or (resp.status_code == 400 and "auth" in resp.text.lower()):
+        if resp.status_code == 401 or (
+            resp.status_code == 400 and "auth" in resp.text.lower()
+        ):
             self._auth()
             resp = self.session.request(method, url, **kwargs)
         return resp
@@ -119,16 +121,19 @@ class IikoClient:
             name = (dep.findtext("name") or "").strip()
             code = (dep.findtext("code") or "").strip()
             if s_id and name:
-                stores.append({
-                    "id": s_id,
-                    "name": name,
-                    "code": code,
-                })
+                stores.append(
+                    {
+                        "id": s_id,
+                        "name": name,
+                        "code": code,
+                    }
+                )
         return sorted(stores, key=lambda s: s["name"])
 
     def upload_invoice(self, target_store_id: str, xml_payload: str):
         # Safety guardrail dynamically validating against managed stores in database
         from storage import get_allowed_stores
+
         allowed = get_allowed_stores()
         if target_store_id not in allowed:
             raise PermissionError(

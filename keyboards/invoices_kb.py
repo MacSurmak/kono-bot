@@ -8,8 +8,16 @@ def get_pdf_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
     """Generates confirmation keyboard for verifying raw OCR output from PDF."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=t("btn_confirm_pdf"), callback_data=f"inv:pdf_ok:{doc_id}")],
-            [InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_confirm_pdf"), callback_data=f"inv:pdf_ok:{doc_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+                )
+            ],
         ]
     )
 
@@ -17,6 +25,7 @@ def get_pdf_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
 def get_store_selection_kb(doc_id: str) -> InlineKeyboardMarkup:
     """Generates dynamic store selection keyboard grouped in responsive rows."""
     from storage import get_allowed_stores
+
     allowed_stores = get_allowed_stores()
 
     rows = []
@@ -24,8 +33,7 @@ def get_store_selection_kb(doc_id: str) -> InlineKeyboardMarkup:
     for store_id, store_name in allowed_stores.items():
         current_row.append(
             InlineKeyboardButton(
-                text=f"🏢 {store_name}",
-                callback_data=f"inv:store:{doc_id}:{store_id}"
+                text=f"🏢 {store_name}", callback_data=f"inv:store:{doc_id}:{store_id}"
             )
         )
         if len(current_row) == 2:
@@ -34,7 +42,13 @@ def get_store_selection_kb(doc_id: str) -> InlineKeyboardMarkup:
     if current_row:
         rows.append(current_row)
 
-    rows.append([InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -46,13 +60,20 @@ def get_supplier_disambiguation_kb(
     for c in candidates:
         dep = f" (цех {c['dept_codes']})" if c.get("dept_codes") else ""
         text = f"{c['name'][:30]}{dep}"
-        rows.append([
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=text, callback_data=f"inv:supp:{doc_id}:{c['id']}"
+                )
+            ]
+        )
+    rows.append(
+        [
             InlineKeyboardButton(
-                text=text,
-                callback_data=f"inv:supp:{doc_id}:{c['id']}"
+                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
             )
-        ])
-    rows.append([InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")])
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -64,13 +85,21 @@ def get_fuzzy_supplier_kb(
     for c in candidates:
         name = c["name"][:32]
         score = f"{c['score']:.0f}%"
-        rows.append([
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{name} ({score})",
+                    callback_data=f"inv:supp:{doc_id}:{c['id']}",
+                )
+            ]
+        )
+    rows.append(
+        [
             InlineKeyboardButton(
-                text=f"{name} ({score})",
-                callback_data=f"inv:supp:{doc_id}:{c['id']}"
+                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
             )
-        ])
-    rows.append([InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")])
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -80,14 +109,12 @@ def get_upload_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=t("btn_create_draft"),
-                    callback_data=f"inv:upload:{doc_id}"
+                    text=t("btn_create_draft"), callback_data=f"inv:upload:{doc_id}"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text=t("btn_cancel"),
-                    callback_data=f"inv:cancel:{doc_id}"
+                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
                 )
             ],
         ]
@@ -101,20 +128,43 @@ def get_packaging_coeff_kb(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="x1 (1 к 1)", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:1"),
-                InlineKeyboardButton(text="x10", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:10"),
-                InlineKeyboardButton(text="x20", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:20"),
+                InlineKeyboardButton(
+                    text="x1 (1 к 1)",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:1",
+                ),
+                InlineKeyboardButton(
+                    text="x10",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:10",
+                ),
+                InlineKeyboardButton(
+                    text="x20",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:20",
+                ),
             ],
             [
-                InlineKeyboardButton(text="x50", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:50"),
-                InlineKeyboardButton(text="x100", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:100"),
-                InlineKeyboardButton(text="x500", callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:500"),
+                InlineKeyboardButton(
+                    text="x50",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:50",
+                ),
+                InlineKeyboardButton(
+                    text="x100",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:100",
+                ),
+                InlineKeyboardButton(
+                    text="x500",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:500",
+                ),
             ],
             [
-                InlineKeyboardButton(text=t("btn_custom_coeff"), callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:custom"),
+                InlineKeyboardButton(
+                    text=t("btn_custom_coeff"),
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:custom",
+                ),
             ],
             [
-                InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"),
+                InlineKeyboardButton(
+                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+                ),
             ],
         ]
     )
@@ -128,28 +178,34 @@ def get_item_resolution_kb(
     for c in candidates:
         name = c["name"][:35]
         score = f"{c['score']:.0f}%"
-        rows.append([
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{name} ({score})",
+                    callback_data=f"inv:match:{doc_id}:{item_idx}:{c['id']}",
+                )
+            ]
+        )
+    rows.append(
+        [
             InlineKeyboardButton(
-                text=f"{name} ({score})",
-                callback_data=f"inv:match:{doc_id}:{item_idx}:{c['id']}"
+                text=t("btn_manual_sku"),
+                callback_data=f"inv:manual:{doc_id}:{item_idx}",
             )
-        ])
-    rows.append([
-        InlineKeyboardButton(
-            text=t("btn_manual_sku"),
-            callback_data=f"inv:manual:{doc_id}:{item_idx}"
-        )
-    ])
-    rows.append([
-        InlineKeyboardButton(
-            text=t("btn_skip_item"),
-            callback_data=f"inv:skip:{doc_id}:{item_idx}"
-        )
-    ])
-    rows.append([
-        InlineKeyboardButton(
-            text=t("btn_cancel"),
-            callback_data=f"inv:cancel:{doc_id}"
-        )
-    ])
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_skip_item"), callback_data=f"inv:skip:{doc_id}:{item_idx}"
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)

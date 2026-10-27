@@ -3,9 +3,30 @@ from typing import List, Dict, Any
 from rapidfuzz import fuzz
 
 NOISE_WORDS = {
-    "акция", "упак", "упаковка", "пачка", "пач", "пак", "бут", "бутылка",
-    "шт", "кор", "коробка", "гост", "ту", "б/уп", "артикул", "арт",
-    "россия", "китай", "япония", "тайланд", "корея", "для", "со", "вкусом"
+    "акция",
+    "упак",
+    "упаковка",
+    "пачка",
+    "пач",
+    "пак",
+    "бут",
+    "бутылка",
+    "шт",
+    "кор",
+    "коробка",
+    "гост",
+    "ту",
+    "б/уп",
+    "артикул",
+    "арт",
+    "россия",
+    "китай",
+    "япония",
+    "тайланд",
+    "корея",
+    "для",
+    "со",
+    "вкусом",
 }
 
 
@@ -23,22 +44,23 @@ def extract_dimensions_and_numbers(text: str) -> set:
 
 
 def find_catalog_candidates(
-    raw_name: str,
-    article: str,
-    catalog: List[Dict[str, Any]],
-    limit: int = 3
+    raw_name: str, article: str, catalog: List[Dict[str, Any]], limit: int = 3
 ) -> List[Dict[str, Any]]:
     """Evaluates iiko catalog products using exact article matches, dimension preservation, and token-set scoring."""
     # Tier 1: Exact article / SKU match from vendor invoice
     clean_article = article.strip().lower() if article else ""
     if clean_article:
         exact_sku_matches = [
-            p for p in catalog
-            if p.get("article", "").strip().lower() == clean_article
+            p for p in catalog if p.get("article", "").strip().lower() == clean_article
         ]
         if exact_sku_matches:
             return [
-                {"id": p["id"], "name": p["name"], "article": p.get("article", ""), "score": 100.0}
+                {
+                    "id": p["id"],
+                    "name": p["name"],
+                    "article": p.get("article", ""),
+                    "score": 100.0,
+                }
                 for p in exact_sku_matches[:limit]
             ]
 

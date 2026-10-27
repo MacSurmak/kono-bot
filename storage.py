@@ -49,7 +49,9 @@ def init_db():
         cursor.execute("PRAGMA table_info(supplier_mappings)")
         mapping_columns = [row[1] for row in cursor.fetchall()]
         if "package_coefficient" not in mapping_columns:
-            cursor.execute("ALTER TABLE supplier_mappings ADD COLUMN package_coefficient REAL NOT NULL DEFAULT 1.0")
+            cursor.execute(
+                "ALTER TABLE supplier_mappings ADD COLUMN package_coefficient REAL NOT NULL DEFAULT 1.0"
+            )
 
         # 2. Preferred suppliers lookup table for disambiguating identical INNs
         cursor.execute("""
@@ -109,10 +111,11 @@ def init_db():
         cursor.execute("SELECT COUNT(*) FROM managed_stores")
         if cursor.fetchone()[0] == 0:
             from config import STORES_CONFIG
+
             for s_id, s_data in STORES_CONFIG.items():
                 cursor.execute(
                     "INSERT INTO managed_stores (store_id, name, is_active) VALUES (?, ?, 1)",
-                    (s_id, s_data["name"])
+                    (s_id, s_data["name"]),
                 )
         conn.commit()
 
@@ -127,7 +130,11 @@ def record_mapping_vote(
     package_coefficient: float = 1.0,
 ):
     clean_name = normalize_item_name(raw_name)
-    safe_coeff = float(package_coefficient) if package_coefficient and package_coefficient > 0 else 1.0
+    safe_coeff = (
+        float(package_coefficient)
+        if package_coefficient and package_coefficient > 0
+        else 1.0
+    )
     with get_db_connection() as conn:
         conn.execute(
             """
@@ -271,7 +278,9 @@ def get_bot_user(telegram_id: int) -> Optional[Dict[str, Any]]:
         }
 
 
-def upsert_bot_user(telegram_id: int, username: Optional[str], full_name: str, role: str = "user"):
+def upsert_bot_user(
+    telegram_id: int, username: Optional[str], full_name: str, role: str = "user"
+):
     """Creates or updates a bot user record."""
     with get_db_connection() as conn:
         conn.execute(
@@ -307,9 +316,7 @@ def validate_and_consume_invite(
     """Validates single-use token and registers new user transactionally."""
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT token, is_used FROM bot_invites WHERE token = ?", (token,)
-        )
+        cur.execute("SELECT token, is_used FROM bot_invites WHERE token = ?", (token,))
         row = cur.fetchone()
         if not row or row[1] == 1:
             return False
@@ -371,8 +378,13 @@ def get_all_managed_stores() -> List[Dict[str, Any]]:
     """Returns list of all stores registered in database."""
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT store_id, name, is_active FROM managed_stores ORDER BY name ASC")
-        return [{"store_id": r[0], "name": r[1], "is_active": bool(r[2])} for r in cur.fetchall()]
+        cur.execute(
+            "SELECT store_id, name, is_active FROM managed_stores ORDER BY name ASC"
+        )
+        return [
+            {"store_id": r[0], "name": r[1], "is_active": bool(r[2])}
+            for r in cur.fetchall()
+        ]
 
 
 def add_managed_store(store_id: str, name: str) -> None:
@@ -390,7 +402,9 @@ def add_managed_store(store_id: str, name: str) -> None:
 def delete_managed_store(store_id: str) -> None:
     """Deletes a restaurant store from active managed list."""
     with get_db_connection() as conn:
-        conn.execute("DELETE FROM managed_stores WHERE store_id = ?", (store_id.strip(),))
+        conn.execute(
+            "DELETE FROM managed_stores WHERE store_id = ?", (store_id.strip(),)
+        )
 
 
 def search_mappings_for_admin(query: str, limit: int = 10) -> List[Dict[str, Any]]:

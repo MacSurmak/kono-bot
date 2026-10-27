@@ -18,10 +18,7 @@ async def main():
     init_db()
 
     bot_token = cfg["telegram"]["bot_token"]
-    bot = Bot(
-        token=bot_token,
-        default=DefaultBotProperties(parse_mode="HTML")
-    )
+    bot = Bot(token=bot_token, default=DefaultBotProperties(parse_mode="HTML"))
 
     from aiogram.utils.callback_answer import CallbackAnswerMiddleware
     from middlewares.throttling import ThrottlingMiddleware

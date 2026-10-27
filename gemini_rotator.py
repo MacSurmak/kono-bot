@@ -40,7 +40,9 @@ class GeminiRotator:
             usage_map = get_gemini_key_usage_counts()
             req_count = usage_map.get(key_name, 0) + 1
 
-            logger.info(f"[Gemini API] Active account: '{key_name}' (call #{req_count})...")
+            logger.info(
+                f"[Gemini API] Active account: '{key_name}' (call #{req_count})..."
+            )
 
             try:
                 ai_client = genai.Client(api_key=api_key)
@@ -81,11 +83,22 @@ class GeminiRotator:
                 )
                 is_transient_error = any(
                     marker in err_str
-                    for marker in ("503", "500", "502", "504", "unavailable", "overloaded", "deadline", "timeout")
+                    for marker in (
+                        "503",
+                        "500",
+                        "502",
+                        "504",
+                        "unavailable",
+                        "overloaded",
+                        "deadline",
+                        "timeout",
+                    )
                 )
 
                 if is_quota_error:
-                    logger.warning(f"[429 Quota Exceeded] Account '{key_name}' depleted quota. Rotating...")
+                    logger.warning(
+                        f"[429 Quota Exceeded] Account '{key_name}' depleted quota. Rotating..."
+                    )
                     record_gemini_key_stat(key_name, success=False, is_rate_limit=True)
                     excluded_keys.add(key_name)
                     last_error = e
@@ -100,7 +113,9 @@ class GeminiRotator:
                     last_error = e
                 else:
                     record_gemini_key_stat(key_name, success=False, is_rate_limit=False)
-                    logger.error(f"[Gemini API Fatal Error] Account '{key_name}' failed with unexpected error: {e}")
+                    logger.error(
+                        f"[Gemini API Fatal Error] Account '{key_name}' failed with unexpected error: {e}"
+                    )
                     raise e
 
         raise RuntimeError(

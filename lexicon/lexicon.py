@@ -2,7 +2,6 @@ from typing import Dict
 from aiogram import Bot
 from aiogram.types import BotCommand
 
-
 LEXICON: Dict[str, str] = {
     # System and Auth
     "auth_access_denied_msg": (
@@ -12,7 +11,6 @@ LEXICON: Dict[str, str] = {
     ),
     "auth_access_denied_alert": "⛔ Доступ ограничен. Вы не авторизованы.",
     "throttling_warning": "⚠️ Пожалуйста, не нажимайте кнопки так часто. Подождите секунду.",
-
     # Start & Help
     "start_welcome_invite": (
         "🎉 <b>Добро пожаловать, {name}!</b>\n\n"
@@ -36,7 +34,6 @@ LEXICON: Dict[str, str] = {
         "4. Если в накладной появились новые товары, бот предложит сопоставить их кнопками из каталога iiko.\n\n"
         "<i>Все накладные всегда создаются в iiko со статусом черновика (NOT_PROCESSED).</i>"
     ),
-
     # Admin Panel
     "admin_panel_title": (
         "🛠 <b>Панель управления доступом KONO Supply:</b>\n\n"
@@ -78,7 +75,6 @@ LEXICON: Dict[str, str] = {
     "admin_search_mapping_results": "🔍 <b>Найдено сопоставлений ({count}):</b>\nНажмите «Удалить» под ошибочной связкой:",
     "admin_mapping_deleted_success": "✅ Сопоставление удалено из базы знаний!",
     "admin_btn_back": "⬅️ Назад в админку",
-
     # Invoice Processing UI
     "invoice_parsing_wait": "⏳ <b>Распознаю документ:</b> <code>{filename}</code>...\n<i>Пожалуйста, подождите.</i>",
     "invoice_parsing_error": "❌ <b>Ошибка при разборе документа:</b>\n<code>{error}</code>",
@@ -159,7 +155,6 @@ LEXICON: Dict[str, str] = {
     "invoice_upload_failed": "❌ <b>Ошибка при загрузке накладной в iiko:</b>\n<code>{error}</code>",
     "invoice_cancelled": "❌ <b>Обработка накладной отменена.</b> Временные файлы удалены.",
     "invoice_session_expired": "⚠️ Сессия обработки документа устарела. Отправьте файл заново.",
-
     # Buttons
     "btn_airport": "🏢 АЭРОПОРТ",
     "btn_october": "🏢 ОКТЯБРЬСКАЯ",

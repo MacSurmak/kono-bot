@@ -41,7 +41,9 @@ def parse_diadoc_xml(file_path: str) -> RawInvoiceDocument:
 
     consignee_elem = root.find(".//ГрузПолуч/Адрес/АдрИнф")
     consignee_addr = (
-        consignee_elem.attrib.get("АдрТекст", "").strip() if consignee_elem is not None else ""
+        consignee_elem.attrib.get("АдрТекст", "").strip()
+        if consignee_elem is not None
+        else ""
     )
 
     items = []

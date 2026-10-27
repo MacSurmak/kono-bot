@@ -57,7 +57,9 @@ def load_and_validate_config() -> dict:
     if not telegram.get("bot_token"):
         raise ConfigurationError("Missing required telegram parameter: 'bot_token'")
     if not telegram.get("admin_id") and not telegram.get("admin_ids"):
-        raise ConfigurationError("Missing required telegram parameter: 'admin_id' or 'admin_ids'")
+        raise ConfigurationError(
+            "Missing required telegram parameter: 'admin_id' or 'admin_ids'"
+        )
 
     return config
 
@@ -73,6 +75,7 @@ def get_admin_ids() -> set[int]:
     if "admin_id" in tg and tg["admin_id"]:
         return {int(tg["admin_id"])}
     return set()
+
 
 # Single Source of Truth for allowed stores and keyword mappings
 STORES_CONFIG = {
