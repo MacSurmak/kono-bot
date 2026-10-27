@@ -79,9 +79,9 @@ async def get_cached_suppliers() -> dict:
         return _SUPPLIERS_CACHE["data"]
 
 
-def cleanup_session_data(doc_id: str) -> None:
+async def cleanup_session_data(doc_id: str) -> None:
     """Removes persistent session record and associated local disk artifact."""
-    session = get_invoice_session(doc_id)
+    session = await get_invoice_session(doc_id)
     if session and "file_path" in session:
         file_path = session["file_path"]
         if os.path.exists(file_path):
@@ -89,7 +89,7 @@ def cleanup_session_data(doc_id: str) -> None:
                 os.remove(file_path)
             except OSError:
                 pass
-    delete_invoice_session(doc_id)
+    await delete_invoice_session(doc_id)
     _DOC_LOCKS.pop(doc_id, None)
 
 
