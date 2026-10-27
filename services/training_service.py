@@ -68,24 +68,8 @@ def safe_extract_zip(zip_path: str, extract_dir: str) -> Tuple[int, int]:
     return xml_count, pdf_count
 
 
-async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
-    """Executes deterministic dry-run training simulation without mutating production knowledge base."""
-    files = [
-        os.path.join(scratch_dir, f)
-        for f in os.listdir(scratch_dir)
-        if f.lower().endswith((".xml", ".pdf"))
-    ]
-
-    if not files:
-        raise BatchTrainingError(
-            "В пакете не обнаружено поддерживаемых документов (.xml или .pdf)."
-        )
-
-    if len(files) > MAX_BATCH_FILES:
-        raise BatchTrainingError(
-            f"Превышен максимальный лимит документов на одну сессию: {len(files)} из {MAX_BATCH_FILES}."
-        )
-
+def _parse_all_scratch_documents(files: List[str]) -> Tuple[List[RawInvoiceDocument], List[datetime.date], List[str]]:
+    """CPU-bound parsing of all scratch documents."""
     parsed_docs: List[RawInvoiceDocument] = []
     valid_dates: List[datetime.date] = []
     parse_errors: List[str] = []
@@ -107,6 +91,35 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
         except Exception as e:
             parse_errors.append(f"{os.path.basename(file_path)}: {str(e)}")
 
+    return parsed_docs, valid_dates, parse_errors
+
+
+async def simulate_batch_training(
+    scratch_dir: str, login: str, password: str
+) -> Dict[str, Any]:
+    """Executes deterministic dry-run training simulation using admin's iiko credentials."""
+    import asyncio
+
+    files = [
+        os.path.join(scratch_dir, f)
+        for f in os.listdir(scratch_dir)
+        if f.lower().endswith((".xml", ".pdf"))
+    ]
+
+    if not files:
+        raise BatchTrainingError(
+            "В пакете не обнаружено поддерживаемых документов (.xml или .pdf)."
+        )
+
+    if len(files) > MAX_BATCH_FILES:
+        raise BatchTrainingError(
+            f"Превышен максимальный лимит документов на одну сессию: {len(files)} из {MAX_BATCH_FILES}."
+        )
+
+    parsed_docs, valid_dates, parse_errors = await asyncio.to_thread(
+        _parse_all_scratch_documents, files
+    )
+
     if not parsed_docs:
         raise BatchTrainingError(
             f"Не удалось успешно разобрать ни одного документа. Ошибки: {'; '.join(parse_errors[:3])}"
@@ -122,21 +135,18 @@ async def simulate_batch_training(scratch_dir: str) -> Dict[str, Any]:
         date_from = "2026-01-01"
         date_to = "2026-12-31"
 
-    # Fetch active catalog and historical invoices from iiko
-    active_products = client.get_active_stock_products()
-    active_pool = {p["id"]: p for p in active_products}
-    suppliers_grouped = client.get_suppliers_grouped()
-
-    inv_resp = client.get(
-        "/api/documents/export/incomingInvoice",
-        params={"from": date_from, "to": date_to},
+    # Fetch active catalog and historical invoices from iiko under admin credentials
+    active_products = await asyncio.to_thread(
+        client.get_active_stock_products_for_user, login, password
     )
-    if inv_resp.status_code != 200:
-        raise BatchTrainingError(
-            f"Сбой запроса накладных iiko ({inv_resp.status_code}): {inv_resp.text[:200]}"
-        )
+    active_pool = {p["id"]: p for p in active_products}
+    suppliers_grouped = await asyncio.to_thread(
+        client.get_suppliers_grouped_for_user, login, password
+    )
 
-    inv_root = ET.fromstring(inv_resp.content)
+    inv_root = await asyncio.to_thread(
+        client.export_incoming_invoices_for_user, login, password, date_from, date_to
+    )
     iiko_docs = inv_root.findall(".//document")
 
     # Index iiko documents by (supplier_id, documentNumber) and unique sums

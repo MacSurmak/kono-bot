@@ -76,11 +76,21 @@ def get_cabinet_kb(has_creds: bool) -> InlineKeyboardMarkup:
 
 
 def get_user_stores_toggle_kb(
-    all_stores: List[Dict[str, Any]], connected_store_ids: set
+    all_stores: List[Dict[str, Any]],
+    connected_store_ids: set,
+    page: int = 1,
+    page_size: int = 6,
 ) -> InlineKeyboardMarkup:
-    """Constructs store list with checkboxes allowing operators to toggle their workplace restaurants."""
+    """Constructs paginated store list allowing operators to toggle their workplace restaurants."""
+    total_items = len(all_stores)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+
+    start = (page - 1) * page_size
+    current_slice = all_stores[start : start + page_size]
+
     rows = []
-    for s in all_stores:
+    for s in current_slice:
         s_id = s["id"]
         s_name = s["name"]
         is_conn = s_id in connected_store_ids
@@ -88,11 +98,35 @@ def get_user_stores_toggle_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{prefix}{s_name}",
-                    callback_data=f"cab:toggle_store:{s_id}",
+                    text=f"{prefix}{s_name[:30]}",
+                    callback_data=f"cab:toggle_store:{s_id}:{page}",
                 )
             ]
         )
+
+    # Pagination navigation bar
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(text="◀️", callback_data=f"cab:my_stores:{page - 1}")
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{page} / {total_pages}", callback_data="noop"
+            )
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(text="▶️", callback_data=f"cab:my_stores:{page + 1}")
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+        rows.append(nav_row)
 
     rows.append(
         [InlineKeyboardButton(text=t("menu_btn_back"), callback_data="menu:cabinet")]
@@ -113,8 +147,10 @@ def get_cancel_input_kb() -> InlineKeyboardMarkup:
     )
 
 
-def get_user_mappings_kb(mappings: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Constructs revocation action list for operator's recent item alignments."""
+def get_user_mappings_kb(
+    mappings: List[Dict[str, Any]], page: int, total_pages: int
+) -> InlineKeyboardMarkup:
+    """Constructs paginated revocation action list for operator's item alignments."""
     rows = []
     for m in mappings:
         m_id = m["id"]
@@ -123,10 +159,39 @@ def get_user_mappings_kb(mappings: List[Dict[str, Any]]) -> InlineKeyboardMarkup
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"↩️ {raw} -> {iiko}", callback_data=f"cab:revoke:{m_id}"
+                    text=f"↩️ {raw} -> {iiko}",
+                    callback_data=f"cab:revoke:{m_id}:{page}",
                 )
             ]
         )
+
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"cab:my_mappings:{page - 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{page} / {total_pages}", callback_data="noop"
+            )
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"cab:my_mappings:{page + 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+        rows.append(nav_row)
+
     rows.append(
         [InlineKeyboardButton(text=t("menu_btn_back"), callback_data="menu:cabinet")]
     )

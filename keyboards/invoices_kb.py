@@ -78,11 +78,21 @@ def get_upload_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
 
 
 def get_items_review_kb(
-    doc_id: str, matched_items: List[Dict[str, Any]]
+    doc_id: str,
+    matched_items: List[Dict[str, Any]],
+    page: int = 1,
+    page_size: int = 8,
 ) -> InlineKeyboardMarkup:
-    """Constructs line item review keyboard allowing inline edits before iiko upload."""
+    """Constructs paginated line item review keyboard allowing inline edits before iiko upload."""
+    total_items = len(matched_items)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+
+    start = (page - 1) * page_size
+    current_slice = matched_items[start : start + page_size]
+
     rows = []
-    for it in matched_items:
+    for it in current_slice:
         num = it["num"]
         r_name = it["raw_name"][:16]
         i_name = it["iiko_name"][:16]
@@ -97,10 +107,99 @@ def get_items_review_kb(
             ]
         )
 
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"inv:review_page:{doc_id}:{page - 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{page} / {total_pages}", callback_data="noop"
+            )
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"inv:review_page:{doc_id}:{page + 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+        rows.append(nav_row)
+
     rows.append(
         [
             InlineKeyboardButton(
                 text=t("btn_back_to_upload"), callback_data=f"inv:review_done:{doc_id}"
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_invoice_store_choice_kb(
+    doc_id: str,
+    user_stores: List[Dict[str, Any]],
+    page: int = 1,
+    page_size: int = 5,
+) -> InlineKeyboardMarkup:
+    """Generates paginated store selection keyboard for incoming invoice."""
+    total_items = len(user_stores)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+
+    start = (page - 1) * page_size
+    current_slice = user_stores[start : start + page_size]
+
+    rows = []
+    for s in current_slice:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🏢 {s['name'][:28]}",
+                    callback_data=f"inv:init_store:{doc_id}:{s['store_id']}",
+                )
+            ]
+        )
+
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"inv:store_page:{doc_id}:{page - 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{page} / {total_pages}", callback_data="noop"
+            )
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"inv:store_page:{doc_id}:{page + 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+        rows.append(nav_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
             )
         ]
     )

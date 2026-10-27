@@ -42,14 +42,12 @@ TMP_DIR = os.path.join(
 )
 os.makedirs(TMP_DIR, exist_ok=True)
 
-# Cache containers for iiko catalog and suppliers to prevent network throttling
+# Per-document mutex locks to eliminate race conditions on simultaneous button taps
+_DOC_LOCKS: Dict[str, asyncio.Lock] = {}
 _CATALOG_CACHE: Dict[str, Any] = {"timestamp": 0.0, "data": []}
 _SUPPLIERS_CACHE: Dict[str, Any] = {"timestamp": 0.0, "data": {}}
 _CACHE_LOCK = asyncio.Lock()
-CACHE_TTL = 600.0  # 10 minutes
-
-# Per-document mutex locks to eliminate race conditions on simultaneous button taps
-_DOC_LOCKS: Dict[str, asyncio.Lock] = {}
+CACHE_TTL = 600.0
 
 
 def get_doc_lock(doc_id: str) -> asyncio.Lock:
@@ -58,25 +56,25 @@ def get_doc_lock(doc_id: str) -> asyncio.Lock:
     return _DOC_LOCKS[doc_id]
 
 
-async def get_cached_catalog() -> list:
+async def get_cached_catalog(login: str, password: str) -> list:
     async with _CACHE_LOCK:
         now = time.monotonic()
-        if not _CATALOG_CACHE["data"] or (
-            now - _CATALOG_CACHE["timestamp"] > CACHE_TTL
-        ):
-            catalog = await asyncio.to_thread(client.get_active_stock_products)
+        if not _CATALOG_CACHE["data"] or (now - _CATALOG_CACHE["timestamp"] > CACHE_TTL):
+            catalog = await asyncio.to_thread(
+                client.get_active_stock_products_for_user, login, password
+            )
             _CATALOG_CACHE["data"] = catalog
             _CATALOG_CACHE["timestamp"] = now
         return _CATALOG_CACHE["data"]
 
 
-async def get_cached_suppliers() -> dict:
+async def get_cached_suppliers(login: str, password: str) -> dict:
     async with _CACHE_LOCK:
         now = time.monotonic()
-        if not _SUPPLIERS_CACHE["data"] or (
-            now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL
-        ):
-            suppliers = await asyncio.to_thread(client.get_suppliers_grouped)
+        if not _SUPPLIERS_CACHE["data"] or (now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL):
+            suppliers = await asyncio.to_thread(
+                client.get_suppliers_grouped_for_user, login, password
+            )
             _SUPPLIERS_CACHE["data"] = suppliers
             _SUPPLIERS_CACHE["timestamp"] = now
         return _SUPPLIERS_CACHE["data"]
@@ -165,43 +163,51 @@ async def handle_document_upload(message: types.Message):
     }
     await save_invoice_session(doc_id, message.from_user.id, session_data)
 
+    from services.crypto import decrypt_secret
+
+    login = operator["iiko_login"]
+    password = decrypt_secret(operator["iiko_password_encrypted"])
+
     # Single store connected -> Auto-select and proceed directly
     if len(user_stores) == 1:
         chosen_store = user_stores[0]
         status_msg = await message.answer(
             f"📍 Ресторан: <b>{chosen_store['name']}</b> (автовыбор)\n"
-            + t("invoice_parsing_wait", filename=filename)
+            + t("invoice_parsing_wait", filename=filename),
+            parse_mode="HTML",
         )
         await execute_parse_and_alignment(
-            status_msg, doc_id, chosen_store["store_id"], chosen_store["name"]
+            status_msg, doc_id, chosen_store["store_id"], chosen_store["name"], login, password
         )
     else:
-        # Multiple stores connected -> Operator must choose target store FIRST
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-        rows = []
-        for s in user_stores:
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"🏢 {s['name']}",
-                        callback_data=f"inv:init_store:{doc_id}:{s['store_id']}",
-                    )
-                ]
-            )
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
-                )
-            ]
-        )
+        # Multiple stores connected -> Operator chooses target store with paginated view
+        from keyboards.invoices_kb import get_invoice_store_choice_kb
 
         await message.answer(
             t("invoice_select_store_first", filename=filename),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+            reply_markup=get_invoice_store_choice_kb(doc_id, user_stores, page=1),
             parse_mode="HTML",
         )
+
+
+@router.callback_query(F.data.startswith("inv:store_page:"))
+async def process_store_page_choice(callback: types.CallbackQuery):
+    """Paginates store list for incoming invoice."""
+    parts = callback.data.split(":")
+    doc_id, page = parts[2], int(parts[3])
+
+    from storage import get_user_stores
+    from keyboards.invoices_kb import get_invoice_store_choice_kb
+
+    session = await get_invoice_session(doc_id)
+    if not session:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    user_stores = await get_user_stores(callback.from_user.id)
+    await callback.message.edit_reply_markup(
+        reply_markup=get_invoice_store_choice_kb(doc_id, user_stores, page=page)
+    )
 
 
 @router.callback_query(F.data.startswith("inv:init_store:"))
@@ -215,7 +221,16 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    from storage import get_user_stores
+    from storage import get_user_stores, get_bot_user
+    from services.crypto import decrypt_secret
+
+    operator = await get_bot_user(callback.from_user.id)
+    if not operator or not operator.get("iiko_login") or not operator.get("iiko_password_encrypted"):
+        await callback.message.edit_text(t("invoice_no_creds_error"))
+        return
+
+    login = operator["iiko_login"]
+    password = decrypt_secret(operator["iiko_password_encrypted"])
 
     user_stores = await get_user_stores(callback.from_user.id)
     chosen = next((s for s in user_stores if s["store_id"] == store_id), None)
@@ -223,15 +238,23 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
 
     await callback.message.edit_text(
         f"📍 Ресторан: <b>{store_name}</b>\n"
-        + t("invoice_parsing_wait", filename=session.get("filename", "документ"))
+        + t("invoice_parsing_wait", filename=session.get("filename", "документ")),
+        parse_mode="HTML",
     )
-    await execute_parse_and_alignment(callback.message, doc_id, store_id, store_name)
+    await execute_parse_and_alignment(
+        callback.message, doc_id, store_id, store_name, login, password
+    )
 
 
 async def execute_parse_and_alignment(
-    message: types.Message, doc_id: str, store_id: str, store_name: str
+    message: types.Message,
+    doc_id: str,
+    store_id: str,
+    store_name: str,
+    login: str,
+    password: str,
 ):
-    """Executes document parsing and advances directly to item alignment."""
+    """Executes document parsing and advances directly to item alignment using operator credentials."""
     session = await get_invoice_session(doc_id)
     temp_path = session["file_path"]
 
@@ -274,7 +297,7 @@ async def execute_parse_and_alignment(
             session["supplier_id"], session["supplier_name"] = pref[0], pref[1]
             await save_invoice_session(doc_id, session["user_id"], session)
         else:
-            suppliers_grouped = await get_cached_suppliers()
+            suppliers_grouped = await get_cached_suppliers(login, password)
             candidates = suppliers_grouped.get(supplier_inn, []) if supplier_inn else []
 
             if not candidates:
@@ -332,7 +355,7 @@ async def execute_parse_and_alignment(
                 )
                 return
 
-        await proceed_with_item_alignment(message, doc_id)
+        await proceed_with_item_alignment(message, doc_id, login, password)
 
     except Exception as e:
         logger.exception(f"Document parsing error for {temp_path}: {e}")
@@ -351,13 +374,19 @@ async def process_supplier_disambiguation(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    suppliers_grouped = await get_cached_suppliers()
+    from storage import get_bot_user
+    from services.crypto import decrypt_secret
+
+    operator = await get_bot_user(callback.from_user.id)
+    login = operator["iiko_login"]
+    password = decrypt_secret(operator["iiko_password_encrypted"])
+
+    suppliers_grouped = await get_cached_suppliers(login, password)
     all_suppliers = [s for supp_list in suppliers_grouped.values() for s in supp_list]
     chosen = next((c for c in all_suppliers if c["id"] == supp_id), None)
 
     if chosen:
         supplier_inn = (session["parsed_doc"].get("supplier_inn") or "").strip()
-        # Strictly save preference ONLY if valid non-empty INN exists
         if supplier_inn:
             await save_preferred_supplier(supplier_inn, chosen["id"], chosen["name"])
             logger.info(
@@ -367,16 +396,18 @@ async def process_supplier_disambiguation(callback: types.CallbackQuery):
         session["supplier_name"] = chosen["name"]
         await save_invoice_session(doc_id, callback.from_user.id, session)
 
-    await proceed_with_item_alignment(callback.message, doc_id)
+    await proceed_with_item_alignment(callback.message, doc_id, login, password)
 
 
-async def proceed_with_item_alignment(message: types.Message, doc_id: str):
+async def proceed_with_item_alignment(
+    message: types.Message, doc_id: str, login: str, password: str
+):
     """Executes item matching against knowledge base and active stock catalog."""
     session = await get_invoice_session(doc_id)
     if not session:
         return
 
-    catalog = await get_cached_catalog()
+    catalog = await get_cached_catalog(login, password)
     supplier_id = session["supplier_id"]
     parsed_items = session["parsed_doc"].get("items", [])
 
@@ -529,7 +560,14 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         await message.answer(t("invoice_session_expired"))
         return
 
-    catalog = await get_cached_catalog()
+    from storage import get_bot_user
+    from services.crypto import decrypt_secret
+
+    operator = await get_bot_user(message.from_user.id)
+    login = operator["iiko_login"]
+    password = decrypt_secret(operator["iiko_password_encrypted"])
+
+    catalog = await get_cached_catalog(login, password)
     clean_sku = sku.lower()
     prod = next(
         (
@@ -578,7 +616,14 @@ async def process_manual_match(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    catalog = await get_cached_catalog()
+    from storage import get_bot_user
+    from services.crypto import decrypt_secret
+
+    operator = await get_bot_user(callback.from_user.id)
+    login = operator["iiko_login"]
+    password = decrypt_secret(operator["iiko_password_encrypted"])
+
+    catalog = await get_cached_catalog(login, password)
     prod = next((p for p in catalog if p["id"] == prod_id), None)
     if not prod:
         await callback.answer(t("invoice_sku_not_found", sku=prod_id), show_alert=True)
@@ -692,7 +737,14 @@ async def apply_confirmed_item_match(
                 await target_msg.edit_text(t("invoice_session_expired"))
             return
 
-        catalog = await get_cached_catalog()
+        from storage import get_bot_user
+        from services.crypto import decrypt_secret
+
+        operator = await get_bot_user(session["user_id"])
+        login = operator["iiko_login"]
+        password = decrypt_secret(operator["iiko_password_encrypted"])
+
+        catalog = await get_cached_catalog(login, password)
         prod = next((p for p in catalog if p["id"] == prod_id), None)
         if not prod:
             return
@@ -807,7 +859,10 @@ async def process_skip_item(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("inv:review:"))
 async def process_review_items_click(callback: types.CallbackQuery):
     """Presents line-by-line inspection view before final submission to iiko."""
-    doc_id = callback.data.split(":")[2]
+    parts = callback.data.split(":")
+    doc_id = parts[2]
+    page = int(parts[3]) if len(parts) > 3 else 1
+
     session = await get_invoice_session(doc_id)
     if not session or not session.get("matched_items"):
         await callback.message.edit_text(t("invoice_session_expired"))
@@ -818,8 +873,26 @@ async def process_review_items_click(callback: types.CallbackQuery):
     doc_num = session["parsed_doc"].get("doc_number") or "Б/Н"
     await callback.message.edit_text(
         t("invoice_review_title", doc_number=doc_num),
-        reply_markup=get_items_review_kb(doc_id, session["matched_items"]),
+        reply_markup=get_items_review_kb(doc_id, session["matched_items"], page=page),
         parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("inv:review_page:"))
+async def process_review_page_change(callback: types.CallbackQuery):
+    """Switches page in item review keyboard."""
+    parts = callback.data.split(":")
+    doc_id, page = parts[2], int(parts[3])
+
+    session = await get_invoice_session(doc_id)
+    if not session or not session.get("matched_items"):
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    from keyboards.invoices_kb import get_items_review_kb
+
+    await callback.message.edit_reply_markup(
+        reply_markup=get_items_review_kb(doc_id, session["matched_items"], page=page)
     )
 
 
@@ -890,7 +963,14 @@ async def process_edit_matched_item(callback: types.CallbackQuery):
                 "vat_rate": reverted_matched.get("vat", 20.0),
             }
 
-        catalog = await get_cached_catalog()
+        from storage import get_bot_user
+        from services.crypto import decrypt_secret
+
+        operator = await get_bot_user(session["user_id"])
+        login = operator["iiko_login"]
+        password = decrypt_secret(operator["iiko_password_encrypted"])
+
+        catalog = await get_cached_catalog(login, password)
         candidates = find_catalog_candidates(
             raw_name=original_raw_item["raw_name"],
             article=original_raw_item.get("article", ""),

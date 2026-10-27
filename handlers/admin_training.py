@@ -175,12 +175,24 @@ async def process_accumulate_document(message: types.Message, state: FSMContext)
 async def process_execute_training_simulation(
     callback: types.CallbackQuery, state: FSMContext
 ):
-    """Executes dry-run matching simulation against iikoChain and formats pre-flight report."""
-    from storage import is_admin_user
+    """Executes dry-run matching simulation against iikoChain under admin credentials."""
+    from storage import is_admin_user, get_bot_user
+    from services.crypto import decrypt_secret
 
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
+
+    admin = await get_bot_user(callback.from_user.id)
+    if not admin or not admin.get("iiko_login") or not admin.get("iiko_password_encrypted"):
+        await callback.answer(
+            "Для запуска обучения привяжите свой логин и пароль iiko в кабинете!",
+            show_alert=True,
+        )
+        return
+
+    admin_login = admin["iiko_login"]
+    admin_password = decrypt_secret(admin["iiko_password_encrypted"])
 
     batch_id = callback.data.split(":")[2]
     data = await state.get_data()
@@ -194,8 +206,8 @@ async def process_execute_training_simulation(
     )
 
     try:
-        # Run CPU & network heavy simulation in dedicated background thread
-        report = await asyncio.to_thread(simulate_batch_training, scratch_dir)
+        # Execute pure asynchronous simulation natively
+        report = await simulate_batch_training(scratch_dir, admin_login, admin_password)
         _TRAINING_CACHE[batch_id] = {
             "report": report,
             "scratch_dir": scratch_dir,

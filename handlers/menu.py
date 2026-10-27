@@ -248,14 +248,20 @@ async def process_test_connection(callback: types.CallbackQuery):
         )
 
 
-@router.callback_query(F.data == "cab:my_mappings")
+@router.callback_query(F.data.startswith("cab:my_mappings"))
 async def process_view_my_mappings(callback: types.CallbackQuery):
-    """Displays operator's recent item alignments for self-service revocation."""
-    from storage import get_user_recent_mappings
+    """Displays operator's item alignments across all time with pagination."""
+    parts = callback.data.split(":")
+    page = int(parts[2]) if len(parts) > 2 else 1
+    page_size = 6
+
+    from storage import get_user_mappings
     from keyboards.menu_kb import get_user_mappings_kb
 
-    mappings = await get_user_recent_mappings(callback.from_user.id, limit=10)
-    if not mappings:
+    offset = (page - 1) * page_size
+    mappings, total_count = await get_user_mappings(callback.from_user.id, offset=offset, limit=page_size)
+
+    if not mappings and page == 1:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         kb = InlineKeyboardMarkup(
@@ -272,9 +278,10 @@ async def process_view_my_mappings(callback: types.CallbackQuery):
         )
         return
 
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
     await callback.message.edit_text(
         t("cab_my_mappings_title"),
-        reply_markup=get_user_mappings_kb(mappings),
+        reply_markup=get_user_mappings_kb(mappings, page=page, total_pages=total_pages),
         parse_mode="HTML",
     )
 
@@ -284,9 +291,11 @@ async def process_revoke_my_mapping(callback: types.CallbackQuery):
     """Revokes single mapping created by operator without breaking shared dictionary."""
     from storage import revoke_user_mapping
 
-    audit_id = int(callback.data.split(":")[2])
-    success = await revoke_user_mapping(callback.from_user.id, audit_id)
+    parts = callback.data.split(":")
+    audit_id = int(parts[2])
+    current_page = int(parts[3]) if len(parts) > 3 else 1
 
+    success = await revoke_user_mapping(callback.from_user.id, audit_id)
     if success:
         logger.info(
             f"Operator {callback.from_user.id} revoked mapping audit log #{audit_id}"
@@ -295,27 +304,31 @@ async def process_revoke_my_mapping(callback: types.CallbackQuery):
     else:
         await callback.answer(t("cab_mapping_revoke_failed"), show_alert=True)
 
+    callback.data = f"cab:my_mappings:{current_page}"
     await process_view_my_mappings(callback)
 
 
 @router.callback_query(F.data == "cab:clear_creds")
 async def process_clear_credentials(callback: types.CallbackQuery, state: FSMContext):
-    """Unbinds personal iiko credentials from operator profile."""
+    """Unbinds personal iiko credentials and purges cached session token."""
+    user = await get_bot_user(callback.from_user.id)
+    if user and user.get("iiko_login"):
+        client.invalidate_user_token(user["iiko_login"])
+
     await update_user_iiko_credentials(callback.from_user.id, None, None)
     logger.info(f"User {callback.from_user.id} cleared iiko credentials.")
     await callback.answer(t("cab_creds_cleared"), show_alert=True)
     await process_open_cabinet(callback, state)
 
 
-@router.callback_query(F.data == "cab:my_stores")
+@router.callback_query(F.data.startswith("cab:my_stores"))
 async def process_view_my_stores(callback: types.CallbackQuery):
-    """Displays interactive toggle list of iikoChain restaurants for operator."""
+    """Displays paginated interactive toggle list of iikoChain restaurants for operator."""
+    parts = callback.data.split(":")
+    page = int(parts[2]) if len(parts) > 2 else 1
+
     user = await get_bot_user(callback.from_user.id)
-    if (
-        not user
-        or not user.get("iiko_login")
-        or not user.get("iiko_password_encrypted")
-    ):
+    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
         from keyboards.invoices_kb import get_setup_creds_kb
 
         await callback.message.edit_text(
@@ -332,10 +345,14 @@ async def process_view_my_stores(callback: types.CallbackQuery):
         await callback.answer(t("cab_creds_empty"), show_alert=True)
         return
 
-    # Fetch stores from iiko API under operator credentials
-    stores = await asyncio.to_thread(
-        client.get_iiko_departments_for_user, login, password
-    )
+    try:
+        stores = await asyncio.to_thread(
+            client.get_iiko_departments_for_user, login, password
+        )
+    except Exception as e:
+        await callback.answer(f"Ошибка связи с iiko: {str(e)[:100]}", show_alert=True)
+        return
+
     if not stores:
         await callback.answer(
             "В iikoChain не найдено складов или нет прав доступа.", show_alert=True
@@ -350,21 +367,20 @@ async def process_view_my_stores(callback: types.CallbackQuery):
 
     await callback.message.edit_text(
         t("cab_my_stores_title"),
-        reply_markup=get_user_stores_toggle_kb(stores, connected_ids),
+        reply_markup=get_user_stores_toggle_kb(stores, connected_ids, page=page, page_size=6),
         parse_mode="HTML",
     )
 
 
 @router.callback_query(F.data.startswith("cab:toggle_store:"))
 async def process_toggle_store(callback: types.CallbackQuery):
-    """Toggles restaurant connection state for operator."""
-    store_id = callback.data.split(":")[2]
+    """Toggles restaurant connection state for operator maintaining current page."""
+    parts = callback.data.split(":")
+    store_id = parts[2]
+    current_page = int(parts[3]) if len(parts) > 3 else 1
+
     user = await get_bot_user(callback.from_user.id)
-    if (
-        not user
-        or not user.get("iiko_login")
-        or not user.get("iiko_password_encrypted")
-    ):
+    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
         return
 
     login = user["iiko_login"]
@@ -385,6 +401,8 @@ async def process_toggle_store(callback: types.CallbackQuery):
         else f"Точка «{target_name}» отключена."
     )
     await callback.answer(msg)
+
+    callback.data = f"cab:my_stores:{current_page}"
     await process_view_my_stores(callback)
 
 

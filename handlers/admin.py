@@ -74,23 +74,30 @@ async def process_create_invite(callback: types.CallbackQuery):
     )
 
 
-@router.callback_query(F.data == "admin:list_users")
+@router.callback_query(F.data.startswith("admin:list_users"))
 async def process_list_users(callback: types.CallbackQuery):
-    """Displays active registered users as interactive inline list."""
+    """Displays active registered users as paginated interactive inline list."""
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
 
-    users = await get_all_bot_users()
-    if not users:
+    parts = callback.data.split(":")
+    page = int(parts[2]) if len(parts) > 2 else 1
+    page_size = 6
+    offset = (page - 1) * page_size
+
+    from storage import get_all_bot_users_paginated
+    from keyboards.admin_kb import get_admin_users_list_kb
+
+    users, total_count = await get_all_bot_users_paginated(offset=offset, limit=page_size)
+    if not users and page == 1:
         await callback.message.edit_text(t("admin_users_empty"))
         return
 
-    from keyboards.admin_kb import get_admin_users_list_kb
-
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
     await callback.message.edit_text(
         t("admin_users_title"),
-        reply_markup=get_admin_users_list_kb(users),
+        reply_markup=get_admin_users_list_kb(users, page=page, total_pages=total_pages),
         parse_mode="HTML",
     )
 
@@ -237,21 +244,48 @@ async def process_manage_mappings(callback: types.CallbackQuery, state: FSMConte
 
 @router.message(AdminState.waiting_search_mapping)
 async def handle_search_mapping_input(message: types.Message, state: FSMContext):
-    """Executes search and presents candidates for deletion."""
+    """Executes search and presents paginated candidates for deletion."""
     if not await is_admin_user(message.from_user.id):
         return
     query = message.text.strip()
-    results = await search_mappings_for_admin(query, limit=8)
+    from storage import search_mappings_for_admin_paginated
+
+    page_size = 6
+    results, total_count = await search_mappings_for_admin_paginated(query, offset=0, limit=page_size)
 
     if not results:
         await message.answer(t("admin_search_mapping_empty", query=query))
         return
 
     await state.clear()
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
     await message.answer(
-        t("admin_search_mapping_results", count=len(results)),
-        reply_markup=get_admin_mappings_kb(results),
+        t("admin_search_mapping_results", count=total_count),
+        reply_markup=get_admin_mappings_kb(results, query=query, page=1, total_pages=total_pages),
         parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin:del_map_p:"))
+async def process_mapping_search_page(callback: types.CallbackQuery):
+    """Handles pagination for mapping search results."""
+    if not await is_admin_user(callback.from_user.id):
+        return
+
+    import base64
+    from storage import search_mappings_for_admin_paginated
+
+    parts = callback.data.split(":")
+    encoded_q, page = parts[2], int(parts[3])
+    query = base64.urlsafe_b64decode(encoded_q.encode("ascii")).decode("utf-8")
+
+    page_size = 6
+    offset = (page - 1) * page_size
+    results, total_count = await search_mappings_for_admin_paginated(query, offset=offset, limit=page_size)
+
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    await callback.message.edit_reply_markup(
+        reply_markup=get_admin_mappings_kb(results, query=query, page=page, total_pages=total_pages)
     )
 
 

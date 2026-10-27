@@ -5,8 +5,10 @@ from lexicon import t
 from typing import List, Dict, Any, Optional
 
 
-def get_admin_users_list_kb(users: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Constructs interactive list of users allowing selection for role management."""
+def get_admin_users_list_kb(
+    users: List[Dict[str, Any]], page: int = 1, total_pages: int = 1
+) -> InlineKeyboardMarkup:
+    """Constructs paginated list of users allowing selection for role management."""
     rows = []
     for u in users:
         t_id = u["telegram_id"]
@@ -17,10 +19,38 @@ def get_admin_users_list_kb(users: List[Dict[str, Any]]) -> InlineKeyboardMarkup
             [
                 InlineKeyboardButton(
                     text=f"{badge}{name}{status}",
-                    callback_data=f"admin:user_card:{t_id}",
+                    callback_data=f"admin:user_card:{t_id}:{page}",
                 )
             ]
         )
+
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"admin:list_users:{page - 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{page} / {total_pages}", callback_data="noop"
+            )
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"admin:list_users:{page + 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+        rows.append(nav_row)
+
     rows.append(
         [
             InlineKeyboardButton(
@@ -164,11 +194,13 @@ def get_training_confirmation_kb(batch_id: str, new_count: int) -> InlineKeyboar
     )
 
 
-def get_admin_mappings_kb(results: list) -> InlineKeyboardMarkup:
-    """Constructs list of search results with deletion actions."""
+def get_admin_mappings_kb(
+    results: list, query: str, page: int = 1, total_pages: int = 1
+) -> InlineKeyboardMarkup:
+    """Constructs paginated list of search results with deletion actions."""
     rows = []
     for r in results:
-        btn_text = f"🗑 Удалить: {r['raw_name'][:24]} -> {r['iiko_name'][:20]}"
+        btn_text = f"🗑 Удалить: {r['raw_name'][:20]} -> {r['iiko_name'][:18]}"
         rows.append(
             [
                 InlineKeyboardButton(
@@ -176,6 +208,39 @@ def get_admin_mappings_kb(results: list) -> InlineKeyboardMarkup:
                 )
             ]
         )
+
+    if total_pages > 1:
+        import base64
+
+        encoded_q = base64.urlsafe_b64encode(query.encode("utf-8")).decode("ascii")
+        nav_row = []
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="◀️",
+                    callback_data=f"admin:del_map_p:{encoded_q}:{page - 1}",
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                text=f"{page} / {total_pages}", callback_data="noop"
+            )
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="▶️",
+                    callback_data=f"admin:del_map_p:{encoded_q}:{page + 1}",
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+        rows.append(nav_row)
+
     rows.append(
         [
             InlineKeyboardButton(

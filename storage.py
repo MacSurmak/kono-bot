@@ -277,6 +277,24 @@ async def get_all_bot_users() -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+async def get_all_bot_users_paginated(
+    offset: int = 0, limit: int = 6
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Retrieves paginated employee list along with total count."""
+    pool = get_db_pool()
+    total = await pool.fetchval("SELECT COUNT(*) FROM bot_users;")
+    rows = await pool.fetch(
+        """
+        SELECT telegram_id, username, full_name, role, iiko_login, default_store_id, is_active, created_at
+        FROM bot_users ORDER BY created_at ASC
+        OFFSET $1 LIMIT $2;
+    """,
+        offset,
+        limit,
+    )
+    return [dict(r) for r in rows], total or 0
+
+
 async def create_invite_token(created_by: int) -> str:
     import secrets
 
@@ -467,23 +485,28 @@ async def get_consensus_mapping(
     }
 
 
-async def get_user_recent_mappings(
-    user_id: int, limit: int = 10
-) -> List[Dict[str, Any]]:
-    """Returns recent mappings authored by specific operator within last 48 hours."""
+async def get_user_mappings(
+    user_id: int, offset: int = 0, limit: int = 6
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Returns all mappings authored by specific operator with pagination support."""
     pool = get_db_pool()
+    total = await pool.fetchval(
+        "SELECT COUNT(*) FROM mapping_audit_log WHERE user_id = $1;",
+        user_id,
+    )
     rows = await pool.fetch(
         """
         SELECT id, supplier_id, raw_name, product_id, iiko_name, package_coefficient, created_at
         FROM mapping_audit_log
-        WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '48 hours'
+        WHERE user_id = $1
         ORDER BY created_at DESC
-        LIMIT $2;
+        OFFSET $2 LIMIT $3;
     """,
         user_id,
+        offset,
         limit,
     )
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows], total or 0
 
 
 async def revoke_user_mapping(user_id: int, audit_log_id: int) -> bool:
@@ -532,23 +555,32 @@ async def revoke_user_mapping(user_id: int, audit_log_id: int) -> bool:
             return True
 
 
-async def search_mappings_for_admin(
-    query: str, limit: int = 10
-) -> List[Dict[str, Any]]:
+async def search_mappings_for_admin_paginated(
+    query: str, offset: int = 0, limit: int = 6
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Searches knowledge base mappings with pagination."""
     pool = get_db_pool()
     like_pattern = f"%{query.strip().lower()}%"
+    total = await pool.fetchval(
+        """
+        SELECT COUNT(*) FROM supplier_mappings
+        WHERE LOWER(raw_name) LIKE $1 OR LOWER(iiko_name) LIKE $1 OR LOWER(COALESCE(iiko_article, '')) LIKE $1;
+    """,
+        like_pattern,
+    )
     rows = await pool.fetch(
         """
         SELECT id, raw_name, iiko_name, iiko_article, usage_count, package_coefficient
         FROM supplier_mappings
         WHERE LOWER(raw_name) LIKE $1 OR LOWER(iiko_name) LIKE $1 OR LOWER(COALESCE(iiko_article, '')) LIKE $1
         ORDER BY usage_count DESC
-        LIMIT $2;
+        OFFSET $2 LIMIT $3;
     """,
         like_pattern,
+        offset,
         limit,
     )
-    return [
+    results = [
         {
             "id": r["id"],
             "raw_name": r["raw_name"],
@@ -559,6 +591,7 @@ async def search_mappings_for_admin(
         }
         for r in rows
     ]
+    return results, total or 0
 
 
 async def delete_mapping_by_id(mapping_id: int) -> bool:
