@@ -3,68 +3,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from lexicon import t
 
 
-def get_pdf_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
-    """Generates confirmation keyboard for verifying raw OCR output from PDF."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=t("btn_confirm_pdf"), callback_data=f"inv:pdf_ok:{doc_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
-                )
-            ],
-        ]
-    )
-
-
-def get_store_selection_kb(
-    doc_id: str, allowed_stores: Dict[str, str], default_store_id: Optional[str] = None
-) -> InlineKeyboardMarkup:
-    """Generates store selection keyboard with preferred workstation highlighted first."""
-    rows = []
-
-    # Place default store at the top if set
-    if default_store_id and default_store_id in allowed_stores:
-        def_name = allowed_stores[default_store_id]
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"⭐ 🏢 {def_name} (По умолчанию)",
-                    callback_data=f"inv:store:{doc_id}:{default_store_id}",
-                )
-            ]
-        )
-
-    other_stores = {
-        sid: name for sid, name in allowed_stores.items() if sid != default_store_id
-    }
-    current_row = []
-    for store_id, store_name in other_stores.items():
-        current_row.append(
-            InlineKeyboardButton(
-                text=f"🏢 {store_name}", callback_data=f"inv:store:{doc_id}:{store_id}"
-            )
-        )
-        if len(current_row) == 2:
-            rows.append(current_row)
-            current_row = []
-    if current_row:
-        rows.append(current_row)
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
-            )
-        ]
-    )
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
 def get_supplier_disambiguation_kb(
     doc_id: str, candidates: List[Dict[str, str]]
 ) -> InlineKeyboardMarkup:

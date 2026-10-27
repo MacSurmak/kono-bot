@@ -20,7 +20,6 @@ from storage import (
     record_mapping_vote,
     get_preferred_supplier,
     save_preferred_supplier,
-    get_allowed_stores,
     get_user_stores,
     save_invoice_session,
     get_invoice_session,

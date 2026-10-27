@@ -251,23 +251,5 @@ class IikoClient:
             except Exception:
                 pass
 
-    def upload_invoice(self, target_store_id: str, xml_payload: str):
-        # Safety guardrail dynamically validating against managed stores in database
-        from storage import get_allowed_stores
-
-        allowed = get_allowed_stores()
-        if target_store_id not in allowed:
-            raise PermissionError(
-                f"CRITICAL: Attempted upload to unauthorized store {target_store_id}! "
-                f"Allowed stores: {allowed}"
-            )
-
-        headers = {"Content-Type": "application/xml; charset=utf-8"}
-        return self.post(
-            "/api/documents/import/incomingInvoice",
-            data=xml_payload.encode("utf-8"),
-            headers=headers,
-        )
-
 
 client = IikoClient()

@@ -369,25 +369,6 @@ async def toggle_user_store(user_id: int, store_id: str, store_name: str) -> boo
             return True
 
 
-async def get_allowed_stores() -> Dict[str, str]:
-    """Compatibility query returning all distinct stores connected across network operators."""
-    pool = get_db_pool()
-    rows = await pool.fetch("SELECT DISTINCT store_id, store_name FROM user_stores;")
-    return {r["store_id"]: r["store_name"] for r in rows}
-
-
-async def get_all_managed_stores() -> List[Dict[str, Any]]:
-    """Compatibility helper returning all active user stores."""
-    pool = get_db_pool()
-    rows = await pool.fetch("SELECT DISTINCT store_id, store_name FROM user_stores ORDER BY store_name ASC;")
-    return [{"store_id": r["store_id"], "name": r["store_name"], "is_active": True} for r in rows]
-
-
-async def get_managed_stores_with_keywords() -> List[Dict[str, Any]]:
-    """Compatibility helper returning empty list."""
-    return []
-
-
 # ================= MAPPINGS, CONSENSUS & GOVERNANCE =================
 async def record_mapping_vote(
     supplier_id: str,

@@ -131,8 +131,3 @@ def get_user_mappings_kb(mappings: List[Dict[str, Any]]) -> InlineKeyboardMarkup
         [InlineKeyboardButton(text=t("menu_btn_back"), callback_data="menu:cabinet")]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def get_default_store_selection_kb(*args, **kwargs) -> InlineKeyboardMarkup:
-    """Legacy compatibility stub."""
-    return InlineKeyboardMarkup(inline_keyboard=[])
