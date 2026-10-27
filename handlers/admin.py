@@ -30,16 +30,10 @@ class AdminState(StatesGroup):
     waiting_manual_store = State()
 
 
-router = Router(name="admin_router")
-ADMIN_ID = int(cfg["telegram"]["admin_id"])
-
-
-from lexicon import t
-
-
-from middlewares.auth import get_configured_admin_ids
+from config import get_admin_ids
 
 router = Router(name="admin_router")
+get_configured_admin_ids = get_admin_ids
 
 
 @router.message(Command("admin"))

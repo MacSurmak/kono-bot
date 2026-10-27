@@ -64,6 +64,16 @@ def load_and_validate_config() -> dict:
 
 cfg = load_and_validate_config()
 
+
+def get_admin_ids() -> set[int]:
+    """Retrieves set of admin Telegram IDs from configuration."""
+    tg = cfg.get("telegram", {})
+    if "admin_ids" in tg and isinstance(tg["admin_ids"], list):
+        return {int(x) for x in tg["admin_ids"]}
+    if "admin_id" in tg and tg["admin_id"]:
+        return {int(tg["admin_id"])}
+    return set()
+
 # Single Source of Truth for allowed stores and keyword mappings
 STORES_CONFIG = {
     "4841e49a-61b4-4f34-b51c-7cfb3ccad7ac": {

@@ -1,15 +1,10 @@
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
-from config import cfg
+from config import cfg, get_admin_ids
 from storage import get_bot_user, upsert_bot_user
 
-def get_configured_admin_ids() -> set[int]:
-    """Extracts admin IDs from either admin_ids list or legacy admin_id scalar."""
-    tg_cfg = cfg["telegram"]
-    if "admin_ids" in tg_cfg and isinstance(tg_cfg["admin_ids"], list):
-        return {int(x) for x in tg_cfg["admin_ids"]}
-    return {int(tg_cfg["admin_id"])}
+get_configured_admin_ids = get_admin_ids
 
 
 class AuthMiddleware(BaseMiddleware):
