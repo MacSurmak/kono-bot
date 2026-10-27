@@ -18,13 +18,12 @@ def load_and_validate_config() -> dict:
     if not isinstance(config, dict):
         raise ConfigurationError("Configuration file must contain a valid YAML mapping")
 
-    # Validate iiko section
+    # Validate iiko section (base_url is network-wide; credentials are authenticated per-user)
     iiko = config.get("iiko")
     if not isinstance(iiko, dict):
         raise ConfigurationError("Missing or invalid 'iiko' section in config.yaml")
-    for field in ("base_url", "login", "password"):
-        if not iiko.get(field):
-            raise ConfigurationError(f"Missing required iiko parameter: '{field}'")
+    if not iiko.get("base_url"):
+        raise ConfigurationError("Missing required iiko parameter: 'base_url'")
 
     # Validate gemini section
     gemini = config.get("gemini")

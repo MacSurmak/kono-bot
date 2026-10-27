@@ -6,3 +6,6 @@ pydantic
 rapidfuzz
 loguru
 pypdf
+asyncpg
+redis
+cryptography

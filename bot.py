@@ -49,8 +49,8 @@ async def run_garbage_collector():
 async def main():
     """Initializes and runs the supply Telegram bot in polling mode."""
     setup_logger("INFO")
-    logger.info("Initializing database schema and persistent storage...")
-    init_db()
+    logger.info("Initializing PostgreSQL connection pool and persistent schema...")
+    await init_db()
 
     # Sanitize temporary directory on startup
     if os.path.exists(TMP_DIR):
@@ -88,13 +88,16 @@ async def main():
     logger.info("Starting Telegram Bot long-polling...")
     await bot.delete_webhook(drop_pending_updates=True)
 
+    from storage import close_db
+
     gc_task = asyncio.create_task(run_garbage_collector())
     try:
         await dp.start_polling(bot)
     finally:
         gc_task.cancel()
         await bot.session.close()
-        logger.info("Bot session closed successfully.")
+        await close_db()
+        logger.info("Bot session and database connections closed successfully.")
 
 
 if __name__ == "__main__":
