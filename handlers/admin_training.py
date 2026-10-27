@@ -1,0 +1,325 @@
+import os
+import uuid
+import json
+import shutil
+import asyncio
+from typing import Dict, Any
+from aiogram import Router, types, F
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from loguru import logger
+
+from lexicon import t
+from config import get_admin_ids
+from training_service import safe_extract_zip, simulate_batch_training, apply_batch_training
+from keyboards.admin_kb import (
+    get_training_accumulator_kb,
+    get_training_confirmation_kb,
+    get_admin_main_kb,
+)
+
+router = Router(name="admin_training_router")
+
+SCRATCH_BASE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "in",
+    "training_scratch",
+)
+os.makedirs(SCRATCH_BASE, exist_ok=True)
+
+# In-memory storage of simulation reports awaiting admin commit confirmation
+_TRAINING_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+class AdminTrainingState(StatesGroup):
+    accumulating_files = State()
+
+
+def _cleanup_scratch(batch_id: str):
+    """Guaranteed physical cleanup of batch staging scratchpad."""
+    target_dir = os.path.join(SCRATCH_BASE, batch_id)
+    if os.path.exists(target_dir):
+        try:
+            shutil.rmtree(target_dir, ignore_errors=True)
+        except OSError as e:
+            logger.warning(f"Could not purge scratch directory {target_dir}: {e}")
+    _TRAINING_CACHE.pop(batch_id, None)
+
+
+@router.callback_query(F.data == "admin:training_menu")
+async def process_start_training_session(callback: types.CallbackQuery, state: FSMContext):
+    """Activates training batch accumulator session for admin."""
+    if callback.from_user.id not in get_admin_ids():
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    batch_id = str(uuid.uuid4())[:10]
+    batch_dir = os.path.join(SCRATCH_BASE, batch_id)
+    os.makedirs(batch_dir, exist_ok=True)
+
+    await state.set_state(AdminTrainingState.accumulating_files)
+    await state.update_data(
+        batch_id=batch_id,
+        scratch_dir=batch_dir,
+        status_msg_id=callback.message.message_id,
+        chat_id=callback.message.chat.id,
+        zip_count=0,
+        xml_count=0,
+        pdf_count=0,
+        total_files=0,
+    )
+
+    await callback.message.edit_text(
+        t(
+            "admin_train_accumulator_title",
+            batch_id=batch_id,
+            zip_count=0,
+            xml_count=0,
+            pdf_count=0,
+            total_files=0,
+        ),
+        reply_markup=get_training_accumulator_kb(batch_id, total_files=0),
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminTrainingState.accumulating_files, F.document)
+async def process_accumulate_document(message: types.Message, state: FSMContext):
+    """Receives and unpacks incoming training documents into isolated scratch directory."""
+    if message.from_user.id not in get_admin_ids():
+        return
+
+    data = await state.get_data()
+    batch_id = data["batch_id"]
+    scratch_dir = data["scratch_dir"]
+
+    doc = message.document
+    filename = (doc.file_name or "unknown").lower()
+    ext = os.path.splitext(filename)[1]
+
+    if ext not in (".zip", ".xml", ".pdf"):
+        await message.answer(f"⚠️ Файл <code>{filename}</code> пропущен: поддерживаются только .zip, .xml и .pdf.")
+        return
+
+    temp_file = os.path.join(scratch_dir, f"raw_{doc.file_id[:8]}_{filename}")
+    await message.bot.download(doc.file_id, destination=temp_file)
+
+    zip_count = data["zip_count"]
+    xml_count = data["xml_count"]
+    pdf_count = data["pdf_count"]
+
+    if ext == ".zip":
+        try:
+            extracted_xml, extracted_pdf = safe_extract_zip(temp_file, scratch_dir)
+            zip_count += 1
+            xml_count += extracted_xml
+            pdf_count += extracted_pdf
+        except Exception as e:
+            logger.error(f"Error extracting training zip {filename}: {e}")
+            await message.answer(f"❌ Ошибка распаковки архива <code>{filename}</code>: {e}")
+        finally:
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass
+    elif ext == ".xml":
+        xml_count += 1
+    elif ext == ".pdf":
+        pdf_count += 1
+
+    total_files = xml_count + pdf_count
+    await state.update_data(
+        zip_count=zip_count,
+        xml_count=xml_count,
+        pdf_count=pdf_count,
+        total_files=total_files,
+    )
+
+    # Refresh live dashboard
+    try:
+        await message.bot.edit_message_text(
+            chat_id=data["chat_id"],
+            message_id=data["status_msg_id"],
+            text=t(
+                "admin_train_accumulator_title",
+                batch_id=batch_id,
+                zip_count=zip_count,
+                xml_count=xml_count,
+                pdf_count=pdf_count,
+                total_files=total_files,
+            ),
+            reply_markup=get_training_accumulator_kb(batch_id, total_files=total_files),
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("admin:train_run:"))
+async def process_execute_training_simulation(callback: types.CallbackQuery, state: FSMContext):
+    """Executes dry-run matching simulation against iikoChain and formats pre-flight report."""
+    if callback.from_user.id not in get_admin_ids():
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    batch_id = callback.data.split(":")[2]
+    data = await state.get_data()
+    scratch_dir = data.get("scratch_dir") or os.path.join(SCRATCH_BASE, batch_id)
+
+    await state.clear()
+
+    await callback.message.edit_text(
+        t("admin_train_running_wait", date_from="...", date_to="..."),
+        parse_mode="HTML",
+    )
+
+    try:
+        # Run CPU & network heavy simulation in dedicated background thread
+        report = await asyncio.to_thread(simulate_batch_training, scratch_dir)
+        _TRAINING_CACHE[batch_id] = {
+            "report": report,
+            "scratch_dir": scratch_dir,
+            "admin_id": callback.from_user.id,
+        }
+
+        conflict_details = ""
+        if report["conflicts_count"] > 0:
+            conflict_details = "\n⚠️ <b>Примеры конфликтов:</b>\n"
+            for ex in report["conflict_examples"]:
+                conflict_details += (
+                    f"• <b>{ex['raw_name'][:25]}</b>:\n"
+                    f"  База: <i>{ex['current_name'][:25]}</i> (x{ex['current_votes']})\n"
+                    f"  Пакет: <b>{ex['new_name'][:25]}</b> (x{ex['new_votes']})\n"
+                )
+
+        matched_count = report["matched_strict"] + report["matched_unique_sums"]
+        await callback.message.edit_text(
+            t(
+                "admin_train_report_card",
+                total_files=report["total_files"],
+                matched_count=matched_count,
+                strict_count=report["matched_strict"],
+                unique_sums_count=report["matched_unique_sums"],
+                unmatched_count=report["unmatched_invoices"],
+                new_count=report["new_items_count"],
+                confirmed_count=report["confirmed_count"],
+                coeff_count=report["coeff_updates_count"],
+                conflicts_count=report["conflicts_count"],
+                conflict_details=conflict_details,
+            ),
+            reply_markup=get_training_confirmation_kb(batch_id, report["new_items_count"]),
+            parse_mode="HTML",
+        )
+
+    except Exception as e:
+        logger.exception(f"Batch training simulation failed for {batch_id}: {e}")
+        _cleanup_scratch(batch_id)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_back"), callback_data="admin:open"
+                    )
+                ]
+            ]
+        )
+        await callback.message.edit_text(
+            f"❌ <b>Ошибка при анализе пакета:</b>\n<code>{e}</code>",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(F.data.startswith("admin:train_commit:"))
+async def process_commit_training_results(callback: types.CallbackQuery):
+    """Atomically commits candidate mappings into PostgreSQL knowledge base."""
+    if callback.from_user.id not in get_admin_ids():
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    batch_id = callback.data.split(":")[2]
+    cached = _TRAINING_CACHE.get(batch_id)
+
+    if not cached or "report" not in cached:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        _cleanup_scratch(batch_id)
+        return
+
+    candidates = cached["report"].get("candidates_list", [])
+
+    try:
+        committed = await apply_batch_training(candidates, admin_id=callback.from_user.id)
+        _cleanup_scratch(batch_id)
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_back"), callback_data="admin:open"
+                    )
+                ]
+            ]
+        )
+        await callback.message.edit_text(
+            t("admin_train_success", committed_count=committed),
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.exception(f"Failed to commit training batch {batch_id}: {e}")
+        await callback.message.edit_text(f"❌ <b>Ошибка фиксации в базе:</b>\n<code>{e}</code>")
+        _cleanup_scratch(batch_id)
+
+
+@router.callback_query(F.data.startswith("admin:train_report:"))
+async def process_download_training_report(callback: types.CallbackQuery):
+    """Sends detailed telemetry simulation report as downloadable JSON file."""
+    if callback.from_user.id not in get_admin_ids():
+        return
+
+    batch_id = callback.data.split(":")[2]
+    cached = _TRAINING_CACHE.get(batch_id)
+
+    if not cached or "report" not in cached:
+        await callback.answer(t("invoice_session_expired"), show_alert=True)
+        return
+
+    report_bytes = json.dumps(cached["report"], ensure_ascii=False, indent=2).encode("utf-8")
+    doc_file = types.BufferedInputFile(report_bytes, filename=f"training_report_{batch_id}.json")
+
+    await callback.message.answer_document(
+        document=doc_file,
+        caption=f"📄 Полная детализация симуляции обучения (Сессия #{batch_id})",
+    )
+
+
+@router.callback_query(F.data.startswith("admin:train_cancel:"))
+async def process_cancel_training(callback: types.CallbackQuery, state: FSMContext):
+    """Aborts training batch session and wipes all temporary files without touching database."""
+    if callback.from_user.id not in get_admin_ids():
+        return
+
+    batch_id = callback.data.split(":")[2]
+    await state.clear()
+    _cleanup_scratch(batch_id)
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("admin_btn_back"), callback_data="admin:open"
+                )
+            ]
+        ]
+    )
+    await callback.message.edit_text(
+        t("admin_train_cancelled"), reply_markup=kb, parse_mode="HTML"
+    )

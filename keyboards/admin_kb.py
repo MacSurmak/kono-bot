@@ -26,6 +26,56 @@ def get_admin_main_kb() -> InlineKeyboardMarkup:
                     text=t("admin_btn_mappings"), callback_data="admin:manage_mappings"
                 )
             ],
+            [
+                InlineKeyboardButton(
+                    text=t("admin_btn_training"), callback_data="admin:training_menu"
+                )
+            ],
+        ]
+    )
+
+
+def get_training_accumulator_kb(batch_id: str, total_files: int) -> InlineKeyboardMarkup:
+    """Constructs live dashboard keyboard for accumulating training documents."""
+    rows = []
+    if total_files > 0:
+        rows.append([
+            InlineKeyboardButton(
+                text=t("admin_btn_start_training_analysis"),
+                callback_data=f"admin:train_run:{batch_id}",
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(
+            text=t("btn_cancel"),
+            callback_data=f"admin:train_cancel:{batch_id}",
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_training_confirmation_kb(batch_id: str, new_count: int) -> InlineKeyboardMarkup:
+    """Constructs final commit confirmation buttons after dry-run simulation."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("admin_btn_commit_training", count=new_count),
+                    callback_data=f"admin:train_commit:{batch_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("admin_btn_download_report"),
+                    callback_data=f"admin:train_report:{batch_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_cancel"),
+                    callback_data=f"admin:train_cancel:{batch_id}",
+                )
+            ],
         ]
     )
 
