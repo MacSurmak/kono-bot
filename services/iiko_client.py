@@ -240,14 +240,18 @@ class IikoClient:
                 if self.redis_client and sorted_stores:
                     try:
                         self.redis_client.setex(
-                            cache_key, 3600, json.dumps(sorted_stores, ensure_ascii=False)
+                            cache_key,
+                            3600,
+                            json.dumps(sorted_stores, ensure_ascii=False),
                         )
                     except Exception:
                         pass
                 return sorted_stores
         finally:
             try:
-                requests.get(f"{self.base_url}/api/logout", params={"key": token}, timeout=5)
+                requests.get(
+                    f"{self.base_url}/api/logout", params={"key": token}, timeout=5
+                )
             except Exception:
                 pass
 

@@ -109,19 +109,38 @@ async def handle_document_upload(message: types.Message):
 
     # Fail-Fast: verify operator has connected stores
     from storage import get_user_stores, get_bot_user
+
     operator = await get_bot_user(message.from_user.id)
-    if not operator or not operator.get("iiko_login") or not operator.get("iiko_password_encrypted"):
+    if (
+        not operator
+        or not operator.get("iiko_login")
+        or not operator.get("iiko_password_encrypted")
+    ):
         from keyboards.invoices_kb import get_setup_creds_kb
-        await message.answer(t("invoice_no_creds_error"), reply_markup=get_setup_creds_kb("setup"), parse_mode="HTML")
+
+        await message.answer(
+            t("invoice_no_creds_error"),
+            reply_markup=get_setup_creds_kb("setup"),
+            parse_mode="HTML",
+        )
         return
 
     user_stores = await get_user_stores(message.from_user.id)
     if not user_stores:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
         kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text=t("btn_connect_stores"), callback_data="cab:my_stores")]]
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("btn_connect_stores"), callback_data="cab:my_stores"
+                    )
+                ]
+            ]
         )
-        await message.answer(t("invoice_no_stores_error"), reply_markup=kb, parse_mode="HTML")
+        await message.answer(
+            t("invoice_no_stores_error"), reply_markup=kb, parse_mode="HTML"
+        )
         return
 
     doc_id = str(uuid.uuid4())[:8]
@@ -153,14 +172,30 @@ async def handle_document_upload(message: types.Message):
             f"📍 Ресторан: <b>{chosen_store['name']}</b> (автовыбор)\n"
             + t("invoice_parsing_wait", filename=filename)
         )
-        await execute_parse_and_alignment(status_msg, doc_id, chosen_store["store_id"], chosen_store["name"])
+        await execute_parse_and_alignment(
+            status_msg, doc_id, chosen_store["store_id"], chosen_store["name"]
+        )
     else:
         # Multiple stores connected -> Operator must choose target store FIRST
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
         rows = []
         for s in user_stores:
-            rows.append([InlineKeyboardButton(text=f"🏢 {s['name']}", callback_data=f"inv:init_store:{doc_id}:{s['store_id']}")])
-        rows.append([InlineKeyboardButton(text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}")])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"🏢 {s['name']}",
+                        callback_data=f"inv:init_store:{doc_id}:{s['store_id']}",
+                    )
+                ]
+            )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+                )
+            ]
+        )
 
         await message.answer(
             t("invoice_select_store_first", filename=filename),
@@ -181,6 +216,7 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
         return
 
     from storage import get_user_stores
+
     user_stores = await get_user_stores(callback.from_user.id)
     chosen = next((s for s in user_stores if s["store_id"] == store_id), None)
     store_name = chosen["name"] if chosen else "Склад"
@@ -192,7 +228,9 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
     await execute_parse_and_alignment(callback.message, doc_id, store_id, store_name)
 
 
-async def execute_parse_and_alignment(message: types.Message, doc_id: str, store_id: str, store_name: str):
+async def execute_parse_and_alignment(
+    message: types.Message, doc_id: str, store_id: str, store_name: str
+):
     """Executes document parsing and advances directly to item alignment."""
     session = await get_invoice_session(doc_id)
     temp_path = session["file_path"]
@@ -240,27 +278,44 @@ async def execute_parse_and_alignment(message: types.Message, doc_id: str, store
             candidates = suppliers_grouped.get(supplier_inn, []) if supplier_inn else []
 
             if not candidates:
-                all_suppliers = [s for supp_list in suppliers_grouped.values() for s in supp_list]
+                all_suppliers = [
+                    s for supp_list in suppliers_grouped.values() for s in supp_list
+                ]
                 supp_names = [s["name"] for s in all_suppliers]
                 raw_supp_name = parsed_doc.supplier_name
-                top_matches = process.extract(raw_supp_name, supp_names, limit=4, scorer=fuzz.token_sort_ratio)
+                top_matches = process.extract(
+                    raw_supp_name, supp_names, limit=4, scorer=fuzz.token_sort_ratio
+                )
 
                 fuzzy_candidates = []
                 for name, score, _ in top_matches:
                     if score >= 45:
-                        match_supp = next((s for s in all_suppliers if s["name"] == name), None)
+                        match_supp = next(
+                            (s for s in all_suppliers if s["name"] == name), None
+                        )
                         if match_supp and match_supp not in fuzzy_candidates:
                             fuzzy_candidates.append({**match_supp, "score": score})
 
                 if fuzzy_candidates:
                     from keyboards.invoices_kb import get_fuzzy_supplier_kb
+
                     await message.edit_text(
-                        t("invoice_supplier_not_found_fuzzy", inn=supplier_inn or "Не указан", raw_name=raw_supp_name),
+                        t(
+                            "invoice_supplier_not_found_fuzzy",
+                            inn=supplier_inn or "Не указан",
+                            raw_name=raw_supp_name,
+                        ),
                         reply_markup=get_fuzzy_supplier_kb(doc_id, fuzzy_candidates),
                     )
                     return
                 else:
-                    await message.edit_text(t("invoice_supplier_none_matched", raw_name=raw_supp_name, inn=supplier_inn or "Не указан"))
+                    await message.edit_text(
+                        t(
+                            "invoice_supplier_none_matched",
+                            raw_name=raw_supp_name,
+                            inn=supplier_inn or "Не указан",
+                        )
+                    )
                     await cleanup_session_data(doc_id)
                     return
 
@@ -270,6 +325,7 @@ async def execute_parse_and_alignment(message: types.Message, doc_id: str, store
                 await save_invoice_session(doc_id, session["user_id"], session)
             else:
                 from keyboards.invoices_kb import get_supplier_disambiguation_kb
+
                 await message.edit_text(
                     t("invoice_supplier_conflict", inn=supplier_inn),
                     reply_markup=get_supplier_disambiguation_kb(doc_id, candidates),
@@ -282,9 +338,6 @@ async def execute_parse_and_alignment(message: types.Message, doc_id: str, store
         logger.exception(f"Document parsing error for {temp_path}: {e}")
         await cleanup_session_data(doc_id)
         await message.edit_text(t("invoice_parsing_error", error=str(e)))
-
-
-
 
 
 @router.callback_query(F.data.startswith("inv:supp:"))

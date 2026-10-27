@@ -118,7 +118,11 @@ async def process_view_user_card(callback: types.CallbackQuery):
 
     is_primary = target_id in get_admin_ids()
     user_stores = await get_user_stores(target_id)
-    stores_str = ", ".join(s["name"] for s in user_stores) if user_stores else "Нет подключенных точек"
+    stores_str = (
+        ", ".join(s["name"] for s in user_stores)
+        if user_stores
+        else "Нет подключенных точек"
+    )
 
     role_str = "👑 Администратор" if target_user["role"] == "admin" else "👤 Оператор"
     status_str = "🟢 Активен" if target_user["is_active"] else "🔴 Заблокирован"
@@ -127,7 +131,11 @@ async def process_view_user_card(callback: types.CallbackQuery):
     text = t(
         "admin_user_card_title",
         full_name=target_user["full_name"],
-        username=f"@{target_user['username']}" if target_user.get("username") else "Без юзернейма",
+        username=(
+            f"@{target_user['username']}"
+            if target_user.get("username")
+            else "Без юзернейма"
+        ),
         telegram_id=target_user["telegram_id"],
         role_str=role_str,
         status_str=status_str,
@@ -158,12 +166,15 @@ async def process_change_user_role(callback: types.CallbackQuery):
     target_id, new_role = int(parts[2]), parts[3]
 
     from config import get_admin_ids
+
     if target_id in get_admin_ids() and new_role != "admin":
         await callback.answer(t("admin_cannot_modify_primary"), show_alert=True)
         return
 
     await set_user_role(target_id, new_role)
-    logger.info(f"Admin {callback.from_user.id} changed user {target_id} role to '{new_role}'")
+    logger.info(
+        f"Admin {callback.from_user.id} changed user {target_id} role to '{new_role}'"
+    )
     await callback.answer(t("admin_role_updated"), show_alert=True)
     await process_view_user_card(callback)
 
@@ -179,12 +190,15 @@ async def process_toggle_user_active(callback: types.CallbackQuery):
     target_id, is_active_val = int(parts[2]), bool(int(parts[3]))
 
     from config import get_admin_ids
+
     if target_id in get_admin_ids() and not is_active_val:
         await callback.answer(t("admin_cannot_modify_primary"), show_alert=True)
         return
 
     await set_user_active(target_id, is_active_val)
-    logger.info(f"Admin {callback.from_user.id} changed user {target_id} is_active to {is_active_val}")
+    logger.info(
+        f"Admin {callback.from_user.id} changed user {target_id} is_active to {is_active_val}"
+    )
     await callback.answer(t("admin_status_updated"), show_alert=True)
     await process_view_user_card(callback)
 

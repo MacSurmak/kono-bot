@@ -57,6 +57,7 @@ async def process_start_training_session(
 ):
     """Activates training batch accumulator session for admin."""
     from storage import is_admin_user
+
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
@@ -95,6 +96,7 @@ async def process_start_training_session(
 async def process_accumulate_document(message: types.Message, state: FSMContext):
     """Receives and unpacks incoming training documents into isolated scratch directory."""
     from storage import is_admin_user
+
     if not await is_admin_user(message.from_user.id):
         return
 
@@ -175,6 +177,7 @@ async def process_execute_training_simulation(
 ):
     """Executes dry-run matching simulation against iikoChain and formats pre-flight report."""
     from storage import is_admin_user
+
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
@@ -255,6 +258,7 @@ async def process_execute_training_simulation(
 async def process_commit_training_results(callback: types.CallbackQuery):
     """Atomically commits candidate mappings into PostgreSQL knowledge base."""
     from storage import is_admin_user
+
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
@@ -303,6 +307,7 @@ async def process_commit_training_results(callback: types.CallbackQuery):
 async def process_download_training_report(callback: types.CallbackQuery):
     """Sends detailed telemetry simulation report as downloadable JSON file."""
     from storage import is_admin_user
+
     if not await is_admin_user(callback.from_user.id):
         return
 
@@ -330,6 +335,7 @@ async def process_download_training_report(callback: types.CallbackQuery):
 async def process_cancel_training(callback: types.CallbackQuery, state: FSMContext):
     """Aborts training batch session and wipes all temporary files without touching database."""
     from storage import is_admin_user
+
     if not await is_admin_user(callback.from_user.id):
         return
 

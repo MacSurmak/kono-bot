@@ -96,8 +96,13 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
     )
 
     from storage import get_user_stores
+
     user_stores = await get_user_stores(user_id)
-    stores_str = ", ".join(s["name"] for s in user_stores) if user_stores else "<i>Нет подключенных точек</i>"
+    stores_str = (
+        ", ".join(s["name"] for s in user_stores)
+        if user_stores
+        else "<i>Нет подключенных точек</i>"
+    )
 
     role_str = "👑 Администратор" if user.get("role") == "admin" else "👤 Оператор"
 
@@ -306,8 +311,13 @@ async def process_clear_credentials(callback: types.CallbackQuery, state: FSMCon
 async def process_view_my_stores(callback: types.CallbackQuery):
     """Displays interactive toggle list of iikoChain restaurants for operator."""
     user = await get_bot_user(callback.from_user.id)
-    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
+    if (
+        not user
+        or not user.get("iiko_login")
+        or not user.get("iiko_password_encrypted")
+    ):
         from keyboards.invoices_kb import get_setup_creds_kb
+
         await callback.message.edit_text(
             t("invoice_no_creds_error"),
             reply_markup=get_setup_creds_kb("setup"),
@@ -323,9 +333,13 @@ async def process_view_my_stores(callback: types.CallbackQuery):
         return
 
     # Fetch stores from iiko API under operator credentials
-    stores = await asyncio.to_thread(client.get_iiko_departments_for_user, login, password)
+    stores = await asyncio.to_thread(
+        client.get_iiko_departments_for_user, login, password
+    )
     if not stores:
-        await callback.answer("В iikoChain не найдено складов или нет прав доступа.", show_alert=True)
+        await callback.answer(
+            "В iikoChain не найдено складов или нет прав доступа.", show_alert=True
+        )
         return
 
     from storage import get_user_stores
@@ -346,19 +360,30 @@ async def process_toggle_store(callback: types.CallbackQuery):
     """Toggles restaurant connection state for operator."""
     store_id = callback.data.split(":")[2]
     user = await get_bot_user(callback.from_user.id)
-    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
+    if (
+        not user
+        or not user.get("iiko_login")
+        or not user.get("iiko_password_encrypted")
+    ):
         return
 
     login = user["iiko_login"]
     password = decrypt_secret(user["iiko_password_encrypted"])
-    stores = await asyncio.to_thread(client.get_iiko_departments_for_user, login, password)
+    stores = await asyncio.to_thread(
+        client.get_iiko_departments_for_user, login, password
+    )
     target_store = next((s for s in stores if s["id"] == store_id), None)
     target_name = target_store["name"] if target_store else "Склад iiko"
 
     from storage import toggle_user_store
+
     is_connected = await toggle_user_store(callback.from_user.id, store_id, target_name)
 
-    msg = f"✅ Точка «{target_name}» подключена!" if is_connected else f"Точка «{target_name}» отключена."
+    msg = (
+        f"✅ Точка «{target_name}» подключена!"
+        if is_connected
+        else f"Точка «{target_name}» отключена."
+    )
     await callback.answer(msg)
     await process_view_my_stores(callback)
 

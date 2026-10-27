@@ -13,17 +13,21 @@ def get_admin_users_list_kb(users: List[Dict[str, Any]]) -> InlineKeyboardMarkup
         name = u["full_name"][:20]
         badge = "👑 " if u["role"] == "admin" else "👤 "
         status = "" if u["is_active"] else " [БЛОК]"
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{badge}{name}{status}",
-                callback_data=f"admin:user_card:{t_id}",
-            )
-        ])
-    rows.append([
-        InlineKeyboardButton(
-            text=t("admin_btn_back"), callback_data="admin:back_main"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{badge}{name}{status}",
+                    callback_data=f"admin:user_card:{t_id}",
+                )
+            ]
         )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("admin_btn_back"), callback_data="admin:back_main"
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -34,40 +38,50 @@ def get_user_manage_card_kb(
     rows = []
     if not is_primary_admin:
         if current_role == "admin":
-            rows.append([
-                InlineKeyboardButton(
-                    text=t("admin_btn_demote"),
-                    callback_data=f"admin:set_role:{target_id}:operator",
-                )
-            ])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_demote"),
+                        callback_data=f"admin:set_role:{target_id}:operator",
+                    )
+                ]
+            )
         else:
-            rows.append([
-                InlineKeyboardButton(
-                    text=t("admin_btn_promote"),
-                    callback_data=f"admin:set_role:{target_id}:admin",
-                )
-            ])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_promote"),
+                        callback_data=f"admin:set_role:{target_id}:admin",
+                    )
+                ]
+            )
 
         if is_active:
-            rows.append([
-                InlineKeyboardButton(
-                    text=t("admin_btn_block"),
-                    callback_data=f"admin:set_active:{target_id}:0",
-                )
-            ])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_block"),
+                        callback_data=f"admin:set_active:{target_id}:0",
+                    )
+                ]
+            )
         else:
-            rows.append([
-                InlineKeyboardButton(
-                    text=t("admin_btn_unblock"),
-                    callback_data=f"admin:set_active:{target_id}:1",
-                )
-            ])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_unblock"),
+                        callback_data=f"admin:set_active:{target_id}:1",
+                    )
+                ]
+            )
 
-    rows.append([
-        InlineKeyboardButton(
-            text=t("admin_btn_back_users"), callback_data="admin:list_users"
-        )
-    ])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("admin_btn_back_users"), callback_data="admin:list_users"
+            )
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
