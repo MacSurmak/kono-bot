@@ -7,14 +7,18 @@ from datetime import datetime, timedelta
 import xml.etree.ElementTree as ET
 from collections import Counter
 
+import asyncio
+
+# Ensure project root is in sys.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from parsers import parse_document
-from iiko_client import client
-from storage import init_db, record_mapping_vote
-
-init_db()
+from services.iiko_client import client
+from storage import init_db, close_db, record_mapping_vote
 
 
-def train(data_dir: str, override_from: str = None, override_to: str = None):
+async def train_async(data_dir: str, override_from: str = None, override_to: str = None):
+    await init_db()
     if not os.path.exists(data_dir):
         print(f"[-] Directory '{data_dir}' not found!")
         sys.exit(1)
@@ -307,7 +311,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
         if is_sequential:
             sequential_invoices += 1
             for pair in temp_seq:
-                record_mapping_vote(
+                await record_mapping_vote(
                     supplier_id=pair["supplier_id"],
                     raw_name=pair["raw_name"],
                     product_id=pair["product_id"],
@@ -315,6 +319,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                     article=pair["article"],
                     weight=1,
                     package_coefficient=pair["package_coefficient"],
+                    source="cli_train",
                 )
                 learned_items_count += 1
 
@@ -387,7 +392,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
             if stage2_pairs:
                 unique_sum_invoices += 1
                 for pair in stage2_pairs:
-                    record_mapping_vote(
+                    await record_mapping_vote(
                         supplier_id=pair["supplier_id"],
                         raw_name=pair["raw_name"],
                         product_id=pair["product_id"],
@@ -395,6 +400,7 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
                         article=pair["article"],
                         weight=1,
                         package_coefficient=pair["package_coefficient"],
+                        source="cli_train",
                     )
                     learned_items_count += 1
 
@@ -546,6 +552,11 @@ def train(data_dir: str, override_from: str = None, override_to: str = None):
     print(f"[+] Журнал успешных накладных:         {success_txt_path}")
     print(f"[+] Машиночитаемая JSON-телеметрия:    {telemetry_json_path}")
     print("=" * 75 + "\n")
+    await close_db()
+
+
+def train(data_dir: str, override_from: str = None, override_to: str = None):
+    asyncio.run(train_async(data_dir, override_from, override_to))
 
 
 def main():

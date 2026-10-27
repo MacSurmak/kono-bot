@@ -12,9 +12,9 @@ from loguru import logger
 from lexicon import t
 from models import RawInvoiceDocument
 from parsers import parse_document
-from iiko_client import client
-from invoice_service import build_iiko_xml
-from item_matcher import find_catalog_candidates
+from services.iiko_client import client
+from services.invoice_service import build_iiko_xml
+from services.item_matcher import find_catalog_candidates
 from storage import (
     get_consensus_mapping,
     record_mapping_vote,

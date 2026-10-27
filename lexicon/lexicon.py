@@ -233,8 +233,6 @@ LEXICON: Dict[str, str] = {
     "cab_my_mappings_empty": "У вас нет недавних привязок номенклатуры (за последние 48 часов).",
     "cab_mapping_revoked_success": "✅ Привязка успешно отозвана!",
     "cab_mapping_revoke_failed": "❌ Не удалось отозвать привязку.",
-}
-
     # Main Navigation Menu
     "menu_main_title": (
         "📱 <b>Главное меню KONO Supply:</b>\n\n"

@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from loguru import logger
 
 from config import cfg
-from iiko_client import client
+from services.iiko_client import client
 from keyboards.admin_kb import (
     get_admin_main_kb,
     get_admin_stores_kb,

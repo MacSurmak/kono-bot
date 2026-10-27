@@ -6,9 +6,8 @@ from config import cfg
 
 iiko_cfg = cfg["iiko"]
 BASE_URL = iiko_cfg["base_url"].rstrip("/")
-LOGIN = iiko_cfg["login"]
-PASSWORD = iiko_cfg["password"]
-
+LOGIN = iiko_cfg.get("login", "")
+PASSWORD = iiko_cfg.get("password", "")
 
 import json
 from loguru import logger

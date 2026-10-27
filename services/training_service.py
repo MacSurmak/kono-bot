@@ -10,7 +10,7 @@ from loguru import logger
 
 from models import RawInvoiceDocument
 from parsers import parse_document
-from iiko_client import client
+from services.iiko_client import client
 from storage import get_db_pool, record_mapping_vote
 
 # Expanded limits for bulk network ingestion

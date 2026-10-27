@@ -2,7 +2,7 @@ import io
 import base64
 from pypdf import PdfReader, PdfWriter
 from models import RawInvoiceDocument, RawInvoiceItem, InvoiceDocumentSchema
-from gemini_rotator import rotator
+from services.gemini_rotator import rotator
 
 
 def normalize_pdf_rotation(file_path: str) -> bytes:

@@ -1,9 +1,12 @@
 import time
 from typing import List, Dict, Set, Optional, Any
+import os
+import redis
 from google import genai
 from loguru import logger
 from config import cfg
-from storage import record_gemini_key_stat, get_gemini_key_usage_counts
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
 class GeminiRotator:
@@ -13,12 +16,36 @@ class GeminiRotator:
         self.model_name: str = gemini_cfg["model"]
         self.thinking_level: str = gemini_cfg["thinking_level"]
         self.max_output_tokens: int = int(gemini_cfg["max_output_tokens"])
+        self._local_counts: Dict[str, int] = {}
+        try:
+            self._redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+        except Exception:
+            self._redis = None
+
+    def _get_key_usage(self, key_name: str) -> int:
+        if self._redis:
+            try:
+                val = self._redis.get(f"gemini:key:{key_name}:requests")
+                if val is not None:
+                    return int(val)
+            except Exception:
+                pass
+        return self._local_counts.get(key_name, 0)
+
+    def _record_key_stat(self, key_name: str, success: bool, is_rate_limit: bool = False) -> None:
+        if self._redis:
+            try:
+                self._redis.incr(f"gemini:key:{key_name}:requests")
+                if is_rate_limit:
+                    self._redis.incr(f"gemini:key:{key_name}:rate_limits")
+            except Exception:
+                pass
+        self._local_counts[key_name] = self._local_counts.get(key_name, 0) + 1
 
     def _get_sorted_keys(self, exclude_names: Set[str]) -> List[Dict[str, str]]:
         """Sorts available keys in ascending order of invocation counts (least used first)."""
-        usage = get_gemini_key_usage_counts()
         available = [k for k in self.keys_config if k["name"] not in exclude_names]
-        available.sort(key=lambda k: usage.get(k["name"], 0))
+        available.sort(key=lambda k: self._get_key_usage(k["name"]))
         return available
 
     def execute_interaction(
@@ -37,8 +64,7 @@ class GeminiRotator:
             key_name = current_key["name"]
             api_key = current_key["api_key"]
 
-            usage_map = get_gemini_key_usage_counts()
-            req_count = usage_map.get(key_name, 0) + 1
+            req_count = self._get_key_usage(key_name) + 1
 
             logger.info(
                 f"[Gemini API] Active account: '{key_name}' (call #{req_count})..."
@@ -71,7 +97,7 @@ class GeminiRotator:
 
                 interaction = ai_client.interactions.create(**create_kwargs)
 
-                record_gemini_key_stat(key_name, success=True)
+                self._record_key_stat(key_name, success=True)
                 logger.info(f"[Gemini API] Request succeeded with account '{key_name}'")
                 return interaction.output_text.strip()
 
@@ -99,7 +125,7 @@ class GeminiRotator:
                     logger.warning(
                         f"[429 Quota Exceeded] Account '{key_name}' depleted quota. Rotating..."
                     )
-                    record_gemini_key_stat(key_name, success=False, is_rate_limit=True)
+                    self._record_key_stat(key_name, success=False, is_rate_limit=True)
                     excluded_keys.add(key_name)
                     last_error = e
                 elif is_transient_error:
@@ -107,12 +133,12 @@ class GeminiRotator:
                         f"[Google Cloud Transient Error] Account '{key_name}' received temporary upstream error: {e}. "
                         "Backing off for 2.0s and rotating to next account..."
                     )
-                    record_gemini_key_stat(key_name, success=False, is_rate_limit=False)
+                    self._record_key_stat(key_name, success=False, is_rate_limit=False)
                     excluded_keys.add(key_name)
                     time.sleep(2.0)
                     last_error = e
                 else:
-                    record_gemini_key_stat(key_name, success=False, is_rate_limit=False)
+                    self._record_key_stat(key_name, success=False, is_rate_limit=False)
                     logger.error(
                         f"[Gemini API Fatal Error] Account '{key_name}' failed with unexpected error: {e}"
                     )

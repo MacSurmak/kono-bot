@@ -11,7 +11,7 @@ from loguru import logger
 
 from lexicon import t
 from config import get_admin_ids
-from training_service import (
+from services.training_service import (
     safe_extract_zip,
     simulate_batch_training,
     apply_batch_training,

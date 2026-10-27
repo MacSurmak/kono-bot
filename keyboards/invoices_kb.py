@@ -1,7 +1,6 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from lexicon import t
-from config import ALLOWED_STORES
 
 
 def get_pdf_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:

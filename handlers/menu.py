@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from loguru import logger
 
 from lexicon import t
-from iiko_client import client
+from services.iiko_client import client
 from services.crypto import encrypt_secret, decrypt_secret
 from config import get_admin_ids
 from storage import (
@@ -298,12 +298,12 @@ async def process_revoke_my_mapping(callback: types.CallbackQuery):
 
 
 @router.callback_query(F.data == "cab:clear_creds")
-async def process_clear_credentials(callback: types.CallbackQuery):
+async def process_clear_credentials(callback: types.CallbackQuery, state: FSMContext):
     """Unbinds personal iiko credentials from operator profile."""
     await update_user_iiko_credentials(callback.from_user.id, None, None)
     logger.info(f"User {callback.from_user.id} cleared iiko credentials.")
     await callback.answer(t("cab_creds_cleared"), show_alert=True)
-    await process_open_cabinet(callback, FSMContext)
+    await process_open_cabinet(callback, state)
 
 
 @router.callback_query(F.data == "cab:choose_store")
@@ -321,14 +321,14 @@ async def process_choose_default_store(callback: types.CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("cab:store:"))
-async def process_save_default_store(callback: types.CallbackQuery):
+async def process_save_default_store(callback: types.CallbackQuery, state: FSMContext):
     """Persists chosen default restaurant store to user profile."""
     store_id = callback.data.split(":")[2]
     new_store_id = None if store_id == "none" else store_id
 
     await update_user_default_store(callback.from_user.id, new_store_id)
     await callback.answer(t("cab_store_saved"), show_alert=True)
-    await process_open_cabinet(callback, FSMContext)
+    await process_open_cabinet(callback, state)
 
 
 @router.callback_query(F.data == "cab:cancel_input")
