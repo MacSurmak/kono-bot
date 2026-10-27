@@ -17,8 +17,9 @@ from storage import (
 from keyboards.menu_kb import (
     get_main_menu_kb,
     get_cabinet_kb,
-    get_default_store_selection_kb,
+    get_user_stores_toggle_kb,
     get_cancel_input_kb,
+    get_user_mappings_kb,
 )
 
 router = Router(name="menu_router")
