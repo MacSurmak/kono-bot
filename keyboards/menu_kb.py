@@ -62,6 +62,11 @@ def get_cabinet_kb(has_creds: bool) -> InlineKeyboardMarkup:
     ])
     rows.append([
         InlineKeyboardButton(
+            text=t("cab_btn_my_mappings"), callback_data="cab:my_mappings"
+        )
+    ])
+    rows.append([
+        InlineKeyboardButton(
             text=t("menu_btn_back"), callback_data="menu:back_main"
         )
     ])
@@ -109,3 +114,23 @@ def get_cancel_input_kb() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def get_user_mappings_kb(mappings: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Constructs revocation action list for operator's recent item alignments."""
+    rows = []
+    for m in mappings:
+        m_id = m["id"]
+        raw = m["raw_name"][:18]
+        iiko = m["iiko_name"][:16]
+        rows.append([
+            InlineKeyboardButton(
+                text=f"↩️ {raw} -> {iiko}", callback_data=f"cab:revoke:{m_id}"
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(
+            text=t("menu_btn_back"), callback_data="menu:cabinet"
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

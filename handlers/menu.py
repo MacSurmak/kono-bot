@@ -235,6 +235,54 @@ async def process_test_connection(callback: types.CallbackQuery):
         await callback.answer(t("cab_test_fail_alert", error=str(e)[:100]), show_alert=True)
 
 
+@router.callback_query(F.data == "cab:my_mappings")
+async def process_view_my_mappings(callback: types.CallbackQuery):
+    """Displays operator's recent item alignments for self-service revocation."""
+    from storage import get_user_recent_mappings
+    from keyboards.menu_kb import get_user_mappings_kb
+
+    mappings = await get_user_recent_mappings(callback.from_user.id, limit=10)
+    if not mappings:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:cabinet"
+                    )
+                ]
+            ]
+        )
+        await callback.message.edit_text(
+            t("cab_my_mappings_empty"), reply_markup=kb, parse_mode="HTML"
+        )
+        return
+
+    await callback.message.edit_text(
+        t("cab_my_mappings_title"),
+        reply_markup=get_user_mappings_kb(mappings),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("cab:revoke:"))
+async def process_revoke_my_mapping(callback: types.CallbackQuery):
+    """Revokes single mapping created by operator without breaking shared dictionary."""
+    from storage import revoke_user_mapping
+
+    audit_id = int(callback.data.split(":")[2])
+    success = await revoke_user_mapping(callback.from_user.id, audit_id)
+
+    if success:
+        logger.info(f"Operator {callback.from_user.id} revoked mapping audit log #{audit_id}")
+        await callback.answer(t("cab_mapping_revoked_success"), show_alert=True)
+    else:
+        await callback.answer(t("cab_mapping_revoke_failed"), show_alert=True)
+
+    await process_view_my_mappings(callback)
+
+
 @router.callback_query(F.data == "cab:clear_creds")
 async def process_clear_credentials(callback: types.CallbackQuery):
     """Unbinds personal iiko credentials from operator profile."""

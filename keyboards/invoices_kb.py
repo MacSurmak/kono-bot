@@ -22,15 +22,25 @@ def get_pdf_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
     )
 
 
-def get_store_selection_kb(doc_id: str) -> InlineKeyboardMarkup:
-    """Generates dynamic store selection keyboard grouped in responsive rows."""
-    from storage import get_allowed_stores
-
-    allowed_stores = get_allowed_stores()
-
+def get_store_selection_kb(
+    doc_id: str, allowed_stores: Dict[str, str], default_store_id: Optional[str] = None
+) -> InlineKeyboardMarkup:
+    """Generates store selection keyboard with preferred workstation highlighted first."""
     rows = []
+
+    # Place default store at the top if set
+    if default_store_id and default_store_id in allowed_stores:
+        def_name = allowed_stores[default_store_id]
+        rows.append([
+            InlineKeyboardButton(
+                text=f"⭐ 🏢 {def_name} (По умолчанию)",
+                callback_data=f"inv:store:{doc_id}:{default_store_id}",
+            )
+        ])
+
+    other_stores = {sid: name for sid, name in allowed_stores.items() if sid != default_store_id}
     current_row = []
-    for store_id, store_name in allowed_stores.items():
+    for store_id, store_name in other_stores.items():
         current_row.append(
             InlineKeyboardButton(
                 text=f"🏢 {store_name}", callback_data=f"inv:store:{doc_id}:{store_id}"
@@ -42,13 +52,11 @@ def get_store_selection_kb(doc_id: str) -> InlineKeyboardMarkup:
     if current_row:
         rows.append(current_row)
 
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
-            )
-        ]
-    )
+    rows.append([
+        InlineKeyboardButton(
+            text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+        )
+    ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -104,12 +112,61 @@ def get_fuzzy_supplier_kb(
 
 
 def get_upload_confirmation_kb(doc_id: str) -> InlineKeyboardMarkup:
-    """Generates final confirmation keyboard for uploading to iiko."""
+    """Generates final confirmation keyboard with pre-flight inspection option."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=t("btn_create_draft"), callback_data=f"inv:upload:{doc_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_review_items"), callback_data=f"inv:review:{doc_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
+                )
+            ],
+        ]
+    )
+
+
+def get_items_review_kb(
+    doc_id: str, matched_items: List[Dict[str, Any]]
+) -> InlineKeyboardMarkup:
+    """Constructs line item review keyboard allowing inline edits before iiko upload."""
+    rows = []
+    for it in matched_items:
+        num = it["num"]
+        r_name = it["raw_name"][:16]
+        i_name = it["iiko_name"][:16]
+        coeff = float(it.get("coefficient", 1.0))
+        c_str = f" x{coeff:g}" if coeff != 1.0 else ""
+        btn_text = f"✏️ #{num}: {r_name} -> {i_name}{c_str}"
+        rows.append([
+            InlineKeyboardButton(
+                text=btn_text, callback_data=f"inv:edit:{doc_id}:{num}"
+            )
+        ])
+
+    rows.append([
+        InlineKeyboardButton(
+            text=t("btn_back_to_upload"), callback_data=f"inv:review_done:{doc_id}"
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_setup_creds_kb(doc_id: str) -> InlineKeyboardMarkup:
+    """Presents quick redirect button to configure iiko credentials."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("btn_setup_iiko_creds"), callback_data="cab:set_creds"
                 )
             ],
             [
