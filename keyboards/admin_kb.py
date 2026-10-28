@@ -195,6 +195,7 @@ def get_admin_mappings_kb(
     results: list, query: str, page: int = 1, total_pages: int = 1
 ) -> InlineKeyboardMarkup:
     """Constructs paginated list of search results with deletion actions."""
+    encoded_q = base64.urlsafe_b64encode(query.encode("utf-8")).decode("ascii") if query else ""
     rows = []
     for r in results:
         btn_text = t(
@@ -205,13 +206,13 @@ def get_admin_mappings_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=btn_text, callback_data=f"admin:del_map:{r['id']}"
+                    text=btn_text,
+                    callback_data=f"admin:del_map:{r['id']}:{encoded_q}:{page}",
                 )
             ]
         )
 
     if total_pages > 1:
-        encoded_q = base64.urlsafe_b64encode(query.encode("utf-8")).decode("ascii")
         nav_row = []
         if page > 1:
             nav_row.append(

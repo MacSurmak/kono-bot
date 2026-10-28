@@ -136,7 +136,7 @@ LEXICON: Dict[str, str] = {
         "• Архивов .zip: <b>{zip_count}</b> шт.\n"
         "• Файлов .xml: <b>{xml_count}</b> шт.\n"
         "• Файлов .pdf: <b>{pdf_count}</b> шт.\n"
-        "• Всего документов: <b>{total_files}</b> / 2000\n\n"
+        "• Всего документов: <b>{total_files}</b> / {max_files}\n\n"
         "<i>Отправьте еще файлы или запустите анализ:</i>"
     ),
     "admin_train_running_wait": (

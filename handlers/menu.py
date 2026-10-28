@@ -8,7 +8,11 @@ from loguru import logger
 from lexicon import t
 from services.iiko_client import client
 from services.crypto import encrypt_secret, decrypt_secret
-from config import get_admin_ids
+from config import (
+    get_admin_ids,
+    PAGE_SIZE_STORES,
+    PAGE_SIZE_MAPPINGS,
+)
 from storage import (
     get_bot_user,
     update_user_iiko_credentials,
@@ -268,7 +272,7 @@ async def process_view_my_mappings(callback: types.CallbackQuery):
     """Displays operator's item alignments across all time with pagination."""
     parts = callback.data.split(":")
     page = int(parts[2]) if len(parts) > 2 else 1
-    page_size = 6
+    page_size = PAGE_SIZE_MAPPINGS
     offset = (page - 1) * page_size
     mappings, total_count = await get_user_mappings(
         callback.from_user.id, offset=offset, limit=page_size
@@ -376,7 +380,7 @@ async def process_view_my_stores(callback: types.CallbackQuery):
     await callback.message.edit_text(
         t("cab_my_stores_title"),
         reply_markup=get_user_stores_toggle_kb(
-            stores, connected_ids, page=page, page_size=6
+            stores, connected_ids, page=page, page_size=PAGE_SIZE_STORES
         ),
         parse_mode="HTML",
     )

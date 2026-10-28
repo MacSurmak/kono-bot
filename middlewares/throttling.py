@@ -5,10 +5,16 @@ from aiogram.types import TelegramObject, Message, CallbackQuery
 from lexicon import t
 
 
+from config import DEFAULT_THROTTLING_RATE_LIMIT
+
+THROTTLING_PURGE_WINDOW_SECONDS = 60.0
+THROTTLING_MAX_USERS = 1000
+
+
 class ThrottlingMiddleware(BaseMiddleware):
     """Prevents double-click race conditions and message flood."""
 
-    def __init__(self, rate_limit: float = 0.5):
+    def __init__(self, rate_limit: float = DEFAULT_THROTTLING_RATE_LIMIT):
         self.rate_limit = rate_limit
         self._user_last_action: Dict[int, float] = {}
 
@@ -36,8 +42,8 @@ class ThrottlingMiddleware(BaseMiddleware):
         self._user_last_action[user.id] = now
 
         # Periodic garbage cleanup of stale user timestamps
-        if len(self._user_last_action) > 1000:
-            threshold = now - 60.0
+        if len(self._user_last_action) > THROTTLING_MAX_USERS:
+            threshold = now - THROTTLING_PURGE_WINDOW_SECONDS
             self._user_last_action = {
                 uid: ts for uid, ts in self._user_last_action.items() if ts > threshold
             }

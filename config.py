@@ -81,3 +81,16 @@ def get_admin_ids() -> set[int]:
     if not admin_ids:
         raise ConfigurationError("At least one valid integer admin Telegram ID must be configured in 'telegram.admin_ids'")
     return admin_ids
+
+
+# ================= SYSTEM-WIDE CONSTANTS (SSOT) =================
+PAGE_SIZE_USERS = 6
+PAGE_SIZE_MAPPINGS = 6
+PAGE_SIZE_STORES = 6
+PAGE_SIZE_INVOICE_STORES = 5
+PAGE_SIZE_REVIEW_ITEMS = 8
+
+CACHE_TTL_CATALOG_SECONDS = 600.0
+CACHE_TTL_SUPPLIERS_SECONDS = 600.0
+SESSION_CLEANUP_TTL_SECONDS = 3600
+DEFAULT_THROTTLING_RATE_LIMIT = 0.5

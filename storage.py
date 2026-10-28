@@ -5,6 +5,9 @@ from dataclasses import asdict, is_dataclass
 import asyncpg
 from loguru import logger
 
+DB_POOL_MIN_SIZE = 2
+DB_POOL_MAX_SIZE = 10
+
 _POOL: Optional[asyncpg.Pool] = None
 
 
@@ -47,8 +50,8 @@ async def init_db() -> asyncpg.Pool:
         database=db,
         user=user,
         password=password,
-        min_size=2,
-        max_size=10,
+        min_size=DB_POOL_MIN_SIZE,
+        max_size=DB_POOL_MAX_SIZE,
     )
 
     async with _POOL.acquire() as conn:

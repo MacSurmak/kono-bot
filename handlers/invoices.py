@@ -59,11 +59,17 @@ TMP_DIR = os.path.join(
 os.makedirs(TMP_DIR, exist_ok=True)
 
 # Per-document mutex locks to eliminate race conditions on simultaneous button taps
+from config import (
+    PAGE_SIZE_INVOICE_STORES,
+    PAGE_SIZE_REVIEW_ITEMS,
+    CACHE_TTL_CATALOG_SECONDS,
+    CACHE_TTL_SUPPLIERS_SECONDS,
+)
+
 _DOC_LOCKS: Dict[str, asyncio.Lock] = {}
 _CATALOG_CACHE: Dict[str, Any] = {"timestamp": 0.0, "data": []}
 _SUPPLIERS_CACHE: Dict[str, Any] = {"timestamp": 0.0, "data": {}}
 _CACHE_LOCK = asyncio.Lock()
-CACHE_TTL = 600.0
 
 
 def get_doc_lock(doc_id: str) -> asyncio.Lock:
@@ -76,7 +82,7 @@ async def get_cached_catalog(login: str, password: str) -> list:
     async with _CACHE_LOCK:
         now = time.monotonic()
         if not _CATALOG_CACHE["data"] or (
-            now - _CATALOG_CACHE["timestamp"] > CACHE_TTL
+            now - _CATALOG_CACHE["timestamp"] > CACHE_TTL_CATALOG_SECONDS
         ):
             catalog = await asyncio.to_thread(
                 client.get_active_stock_products_for_user, login, password
@@ -90,7 +96,7 @@ async def get_cached_suppliers(login: str, password: str) -> dict:
     async with _CACHE_LOCK:
         now = time.monotonic()
         if not _SUPPLIERS_CACHE["data"] or (
-            now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL
+            now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL_SUPPLIERS_SECONDS
         ):
             suppliers = await asyncio.to_thread(
                 client.get_suppliers_grouped_for_user, login, password
@@ -202,7 +208,9 @@ async def handle_document_upload(message: types.Message):
         # Multiple stores connected -> Operator chooses target store with paginated view
         await message.answer(
             t("invoice_select_store_first", filename=filename),
-            reply_markup=get_invoice_store_choice_kb(doc_id, user_stores, page=1),
+            reply_markup=get_invoice_store_choice_kb(
+                doc_id, user_stores, page=1, page_size=PAGE_SIZE_INVOICE_STORES
+            ),
             parse_mode="HTML",
         )
 
@@ -220,7 +228,9 @@ async def process_store_page_choice(callback: types.CallbackQuery):
 
     user_stores = await get_user_stores(callback.from_user.id)
     await callback.message.edit_reply_markup(
-        reply_markup=get_invoice_store_choice_kb(doc_id, user_stores, page=page)
+        reply_markup=get_invoice_store_choice_kb(
+            doc_id, user_stores, page=page, page_size=PAGE_SIZE_INVOICE_STORES
+        )
     )
 
 
@@ -896,7 +906,9 @@ async def process_review_items_click(callback: types.CallbackQuery):
     doc_num = session["parsed_doc"].get("doc_number") or "Б/Н"
     await callback.message.edit_text(
         t("invoice_review_title", doc_number=doc_num),
-        reply_markup=get_items_review_kb(doc_id, session["matched_items"], page=page),
+        reply_markup=get_items_review_kb(
+            doc_id, session["matched_items"], page=page, page_size=PAGE_SIZE_REVIEW_ITEMS
+        ),
         parse_mode="HTML",
     )
 
@@ -913,7 +925,9 @@ async def process_review_page_change(callback: types.CallbackQuery):
         return
 
     await callback.message.edit_reply_markup(
-        reply_markup=get_items_review_kb(doc_id, session["matched_items"], page=page)
+        reply_markup=get_items_review_kb(
+            doc_id, session["matched_items"], page=page, page_size=PAGE_SIZE_REVIEW_ITEMS
+        )
     )
 
 

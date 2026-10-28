@@ -16,6 +16,7 @@ from storage import get_db_pool, record_mapping_vote
 # Expanded limits for bulk network ingestion
 MAX_BATCH_FILES = 2000
 MAX_BATCH_BYTES = 1024 * 1024 * 1024  # 1 GB
+DATE_BUFFER_DAYS = 5
 
 
 class BatchTrainingError(Exception):
@@ -135,8 +136,8 @@ async def simulate_batch_training(
 
     min_doc_date = min(valid_dates)
     max_doc_date = max(valid_dates)
-    date_from = (min_doc_date - timedelta(days=5)).strftime("%Y-%m-%d")
-    date_to = (max_doc_date + timedelta(days=5)).strftime("%Y-%m-%d")
+    date_from = (min_doc_date - timedelta(days=DATE_BUFFER_DAYS)).strftime("%Y-%m-%d")
+    date_to = (max_doc_date + timedelta(days=DATE_BUFFER_DAYS)).strftime("%Y-%m-%d")
 
     # Fetch active catalog and historical invoices from iiko under admin credentials
     active_products = await asyncio.to_thread(

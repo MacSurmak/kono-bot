@@ -1,8 +1,14 @@
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 from rapidfuzz import fuzz
 
-NOISE_WORDS = {
+SCORE_EXACT_ARTICLE = 100.0
+SCORE_DIMENSION_BONUS = 15.0
+SCORE_DIMENSION_PENALTY = 35.0
+DEFAULT_CANDIDATES_LIMIT = 3
+MIN_ACCEPTABLE_SCORE = 45.0
+
+NOISE_WORDS: Set[str] = {
     "акция",
     "упак",
     "упаковка",
@@ -44,7 +50,10 @@ def extract_dimensions_and_numbers(text: str) -> set:
 
 
 def find_catalog_candidates(
-    raw_name: str, article: str, catalog: List[Dict[str, Any]], limit: int = 3
+    raw_name: str,
+    article: str,
+    catalog: List[Dict[str, Any]],
+    limit: int = DEFAULT_CANDIDATES_LIMIT,
 ) -> List[Dict[str, Any]]:
     """Evaluates iiko catalog products using exact article matches, dimension preservation, and token-set scoring."""
     # Tier 1: Exact article / SKU match from vendor invoice
@@ -59,7 +68,7 @@ def find_catalog_candidates(
                     "id": p["id"],
                     "name": p["name"],
                     "article": p.get("article", ""),
-                    "score": 100.0,
+                    "score": SCORE_EXACT_ARTICLE,
                 }
                 for p in exact_sku_matches[:limit]
             ]
@@ -77,10 +86,10 @@ def find_catalog_candidates(
         p_nums = extract_dimensions_and_numbers(p_name)
         if raw_nums and p_nums:
             if raw_nums == p_nums:
-                score = min(100.0, score + 15.0)
+                score = min(100.0, score + SCORE_DIMENSION_BONUS)
             elif not (raw_nums & p_nums):
                 # Penalize conflicting dimensions (e.g. 110x160 vs 120x175)
-                score = max(0.0, score - 35.0)
+                score = max(0.0, score - SCORE_DIMENSION_PENALTY)
 
         scored.append((score, p))
 

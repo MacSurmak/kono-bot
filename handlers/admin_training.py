@@ -15,6 +15,7 @@ from lexicon import t
 from config import get_admin_ids
 from services.crypto import decrypt_secret
 from services.training_service import (
+    MAX_BATCH_FILES,
     safe_extract_zip,
     simulate_batch_training,
     apply_batch_training,
@@ -103,6 +104,7 @@ async def _debounced_accumulator_update(
             xml_count=xml_count,
             pdf_count=pdf_count,
             total_files=total_files,
+            max_files=MAX_BATCH_FILES,
         )
         new_msg = await bot.send_message(
             chat_id=chat_id,
@@ -149,6 +151,7 @@ async def process_start_training_session(
             xml_count=0,
             pdf_count=0,
             total_files=0,
+            max_files=MAX_BATCH_FILES,
         ),
         reply_markup=get_training_accumulator_kb(batch_id, total_files=0),
         parse_mode="HTML",

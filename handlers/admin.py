@@ -7,7 +7,12 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from loguru import logger
 
-from config import cfg, get_admin_ids
+from config import (
+    cfg,
+    get_admin_ids,
+    PAGE_SIZE_USERS,
+    PAGE_SIZE_MAPPINGS,
+)
 from services.iiko_client import client
 from keyboards.admin_kb import (
     get_admin_main_kb,
@@ -88,14 +93,14 @@ async def process_list_users(callback: types.CallbackQuery):
 
     parts = callback.data.split(":")
     page = int(parts[2]) if len(parts) > 2 else 1
-    page_size = 6
+    page_size = PAGE_SIZE_USERS
     offset = (page - 1) * page_size
 
     users, total_count = await get_all_bot_users_paginated(
         offset=offset, limit=page_size
     )
     if not users and page == 1:
-        await callback.message.edit_text(t("admin_users_empty"))
+        await callback.message.edit_text(t("admin_users_empty"), parse_mode="HTML")
         return
 
     total_pages = max(1, (total_count + page_size - 1) // page_size)
@@ -253,13 +258,13 @@ async def handle_search_mapping_input(message: types.Message, state: FSMContext)
         except Exception:
             pass
 
-    page_size = 6
+    page_size = PAGE_SIZE_MAPPINGS
     results, total_count = await search_mappings_for_admin_paginated(
         query, offset=0, limit=page_size
     )
 
     if not results:
-        await message.answer(t("admin_search_mapping_empty", query=query))
+        await message.answer(t("admin_search_mapping_empty", query=query), parse_mode="HTML")
         return
 
     await state.clear()
@@ -283,7 +288,7 @@ async def process_mapping_search_page(callback: types.CallbackQuery):
     encoded_q, page = parts[2], int(parts[3])
     query = base64.urlsafe_b64decode(encoded_q.encode("ascii")).decode("utf-8")
 
-    page_size = 6
+    page_size = PAGE_SIZE_MAPPINGS
     offset = (page - 1) * page_size
     results, total_count = await search_mappings_for_admin_paginated(
         query, offset=offset, limit=page_size
@@ -299,16 +304,43 @@ async def process_mapping_search_page(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin:del_map:"))
 async def process_delete_mapping(callback: types.CallbackQuery):
-    """Permanently deletes chosen mapping record from knowledge base."""
+    """Permanently deletes chosen mapping record and refreshes the current search page."""
     if not await is_admin_user(callback.from_user.id):
         return
-    mapping_id = int(callback.data.split(":")[2])
+
+    parts = callback.data.split(":")
+    mapping_id = int(parts[2])
     success = await delete_mapping_by_id(mapping_id)
     if success:
         logger.info(
             f"Admin {callback.from_user.id} deleted mapping #{mapping_id} from knowledge base"
         )
         await callback.answer(t("admin_mapping_deleted_success"), show_alert=True)
-    await callback.message.edit_text(
-        t("admin_panel_title"), reply_markup=get_admin_main_kb(), parse_mode="HTML"
-    )
+
+    # Retain operator on the same search page rather than dumping to main menu
+    if len(parts) >= 5:
+        encoded_q, page = parts[3], int(parts[4])
+        query = base64.urlsafe_b64decode(encoded_q.encode("ascii")).decode("utf-8")
+        page_size = PAGE_SIZE_MAPPINGS
+        offset = (page - 1) * page_size
+        results, total_count = await search_mappings_for_admin_paginated(
+            query, offset=offset, limit=page_size
+        )
+
+        if not results and page > 1:
+            page -= 1
+            offset = (page - 1) * page_size
+            results, total_count = await search_mappings_for_admin_paginated(
+                query, offset=offset, limit=page_size
+            )
+
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+        await callback.message.edit_reply_markup(
+            reply_markup=get_admin_mappings_kb(
+                results, query=query, page=page, total_pages=total_pages
+            )
+        )
+    else:
+        await callback.message.edit_text(
+            t("admin_panel_title"), reply_markup=get_admin_main_kb(), parse_mode="HTML"
+        )
