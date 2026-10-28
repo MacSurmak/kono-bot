@@ -148,7 +148,9 @@ async def process_login_input(message: types.Message, state: FSMContext):
 
     if prompt_id:
         try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+            await message.bot.delete_message(
+                chat_id=message.chat.id, message_id=prompt_id
+            )
         except Exception:
             pass
 
@@ -179,7 +181,9 @@ async def process_password_input(message: types.Message, state: FSMContext):
 
     if prompt_id:
         try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+            await message.bot.delete_message(
+                chat_id=message.chat.id, message_id=prompt_id
+            )
         except Exception:
             pass
 
@@ -276,7 +280,9 @@ async def process_view_my_mappings(callback: types.CallbackQuery):
     from keyboards.menu_kb import get_user_mappings_kb
 
     offset = (page - 1) * page_size
-    mappings, total_count = await get_user_mappings(callback.from_user.id, offset=offset, limit=page_size)
+    mappings, total_count = await get_user_mappings(
+        callback.from_user.id, offset=offset, limit=page_size
+    )
 
     if not mappings and page == 1:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -345,7 +351,11 @@ async def process_view_my_stores(callback: types.CallbackQuery):
     page = int(parts[2]) if len(parts) > 2 else 1
 
     user = await get_bot_user(callback.from_user.id)
-    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
+    if (
+        not user
+        or not user.get("iiko_login")
+        or not user.get("iiko_password_encrypted")
+    ):
         from keyboards.invoices_kb import get_setup_creds_kb
 
         await callback.message.edit_text(
@@ -384,7 +394,9 @@ async def process_view_my_stores(callback: types.CallbackQuery):
 
     await callback.message.edit_text(
         t("cab_my_stores_title"),
-        reply_markup=get_user_stores_toggle_kb(stores, connected_ids, page=page, page_size=6),
+        reply_markup=get_user_stores_toggle_kb(
+            stores, connected_ids, page=page, page_size=6
+        ),
         parse_mode="HTML",
     )
 
@@ -397,7 +409,11 @@ async def process_toggle_store(callback: types.CallbackQuery):
     current_page = int(parts[3]) if len(parts) > 3 else 1
 
     user = await get_bot_user(callback.from_user.id)
-    if not user or not user.get("iiko_login") or not user.get("iiko_password_encrypted"):
+    if (
+        not user
+        or not user.get("iiko_login")
+        or not user.get("iiko_password_encrypted")
+    ):
         return
 
     login = user["iiko_login"]

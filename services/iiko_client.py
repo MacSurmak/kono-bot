@@ -99,15 +99,21 @@ class IikoClient:
         timeout = kwargs.pop("timeout", 30)
 
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        resp = self.session.request(method, url, params=params, timeout=timeout, **kwargs)
+        resp = self.session.request(
+            method, url, params=params, timeout=timeout, **kwargs
+        )
 
         # Transparent Re-Auth on 401: invalidate cached token and retry once
         if resp.status_code == 401:
-            logger.warning(f"Cached token for '{login}' rejected with 401. Re-authenticating...")
+            logger.warning(
+                f"Cached token for '{login}' rejected with 401. Re-authenticating..."
+            )
             self.invalidate_user_token(login)
             fresh_token = self.get_user_token(login, password)
             params["key"] = fresh_token
-            resp = self.session.request(method, url, params=params, timeout=timeout, **kwargs)
+            resp = self.session.request(
+                method, url, params=params, timeout=timeout, **kwargs
+            )
 
         if resp.status_code != 200:
             raise IikoApiError(
@@ -129,7 +135,9 @@ class IikoClient:
             return True
         finally:
             try:
-                self.session.get(f"{self.base_url}/api/logout", params={"key": token}, timeout=5)
+                self.session.get(
+                    f"{self.base_url}/api/logout", params={"key": token}, timeout=5
+                )
             except Exception:
                 pass
 

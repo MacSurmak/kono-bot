@@ -104,7 +104,9 @@ async def _debounced_accumulator_update(
             reply_markup=get_training_accumulator_kb(batch_id, total_files=total_files),
             parse_mode="HTML",
         )
-        await state.update_data(status_msg_id=new_msg.message_id, total_files=total_files)
+        await state.update_data(
+            status_msg_id=new_msg.message_id, total_files=total_files
+        )
     except asyncio.CancelledError:
         pass
     except Exception as e:
@@ -215,7 +217,11 @@ async def process_execute_training_simulation(
         return
 
     admin = await get_bot_user(callback.from_user.id)
-    if not admin or not admin.get("iiko_login") or not admin.get("iiko_password_encrypted"):
+    if (
+        not admin
+        or not admin.get("iiko_login")
+        or not admin.get("iiko_password_encrypted")
+    ):
         await callback.answer(
             "Для запуска обучения привяжите свой логин и пароль iiko в кабинете!",
             show_alert=True,

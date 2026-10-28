@@ -59,7 +59,9 @@ def get_doc_lock(doc_id: str) -> asyncio.Lock:
 async def get_cached_catalog(login: str, password: str) -> list:
     async with _CACHE_LOCK:
         now = time.monotonic()
-        if not _CATALOG_CACHE["data"] or (now - _CATALOG_CACHE["timestamp"] > CACHE_TTL):
+        if not _CATALOG_CACHE["data"] or (
+            now - _CATALOG_CACHE["timestamp"] > CACHE_TTL
+        ):
             catalog = await asyncio.to_thread(
                 client.get_active_stock_products_for_user, login, password
             )
@@ -71,7 +73,9 @@ async def get_cached_catalog(login: str, password: str) -> list:
 async def get_cached_suppliers(login: str, password: str) -> dict:
     async with _CACHE_LOCK:
         now = time.monotonic()
-        if not _SUPPLIERS_CACHE["data"] or (now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL):
+        if not _SUPPLIERS_CACHE["data"] or (
+            now - _SUPPLIERS_CACHE["timestamp"] > CACHE_TTL
+        ):
             suppliers = await asyncio.to_thread(
                 client.get_suppliers_grouped_for_user, login, password
             )
@@ -177,7 +181,12 @@ async def handle_document_upload(message: types.Message):
             parse_mode="HTML",
         )
         await execute_parse_and_alignment(
-            status_msg, doc_id, chosen_store["store_id"], chosen_store["name"], login, password
+            status_msg,
+            doc_id,
+            chosen_store["store_id"],
+            chosen_store["name"],
+            login,
+            password,
         )
     else:
         # Multiple stores connected -> Operator chooses target store with paginated view
@@ -225,7 +234,11 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
     from services.crypto import decrypt_secret
 
     operator = await get_bot_user(callback.from_user.id)
-    if not operator or not operator.get("iiko_login") or not operator.get("iiko_password_encrypted"):
+    if (
+        not operator
+        or not operator.get("iiko_login")
+        or not operator.get("iiko_password_encrypted")
+    ):
         await callback.message.edit_text(t("invoice_no_creds_error"))
         return
 
@@ -535,7 +548,9 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
         t("invoice_enter_sku_prompt", raw_name=current_item["raw_name"]),
         reply_markup=cancel_kb,
     )
-    await state.update_data(doc_id=doc_id, item_idx=item_idx, prompt_msg_id=msg.message_id)
+    await state.update_data(
+        doc_id=doc_id, item_idx=item_idx, prompt_msg_id=msg.message_id
+    )
 
 
 @router.message(InvoiceState.waiting_manual_sku)
@@ -549,7 +564,9 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
 
     if prompt_id:
         try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+            await message.bot.delete_message(
+                chat_id=message.chat.id, message_id=prompt_id
+            )
         except Exception:
             pass
 
@@ -571,7 +588,11 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
     from services.crypto import decrypt_secret
 
     operator = await get_bot_user(message.from_user.id)
-    if not operator or not operator.get("iiko_login") or not operator.get("iiko_password_encrypted"):
+    if (
+        not operator
+        or not operator.get("iiko_login")
+        or not operator.get("iiko_password_encrypted")
+    ):
         await message.answer(t("invoice_no_creds_error"))
         return
 
@@ -677,7 +698,10 @@ async def process_coeff_selection(callback: types.CallbackQuery, state: FSMConte
             t("invoice_custom_coeff_prompt"), reply_markup=cancel_kb
         )
         await state.update_data(
-            doc_id=doc_id, item_idx=item_idx, prod_id=prod_id, prompt_msg_id=msg.message_id
+            doc_id=doc_id,
+            item_idx=item_idx,
+            prod_id=prod_id,
+            prompt_msg_id=msg.message_id,
         )
         return
 
@@ -707,7 +731,9 @@ async def handle_custom_coeff_input(message: types.Message, state: FSMContext):
     prompt_id = data.get("prompt_msg_id")
     if prompt_id:
         try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+            await message.bot.delete_message(
+                chat_id=message.chat.id, message_id=prompt_id
+            )
         except Exception:
             pass
 

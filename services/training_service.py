@@ -68,7 +68,9 @@ def safe_extract_zip(zip_path: str, extract_dir: str) -> Tuple[int, int]:
     return xml_count, pdf_count
 
 
-def _parse_all_scratch_documents(files: List[str]) -> Tuple[List[RawInvoiceDocument], List[datetime.date], List[str]]:
+def _parse_all_scratch_documents(
+    files: List[str],
+) -> Tuple[List[RawInvoiceDocument], List[datetime.date], List[str]]:
     """CPU-bound parsing of all scratch documents."""
     parsed_docs: List[RawInvoiceDocument] = []
     valid_dates: List[datetime.date] = []

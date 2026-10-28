@@ -109,20 +109,22 @@ def get_user_stores_toggle_kb(
         nav_row = []
         if page > 1:
             nav_row.append(
-                InlineKeyboardButton(text="◀️", callback_data=f"cab:my_stores:{page - 1}")
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"cab:my_stores:{page - 1}"
+                )
             )
         else:
             nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
 
         nav_row.append(
-            InlineKeyboardButton(
-                text=f"{page} / {total_pages}", callback_data="noop"
-            )
+            InlineKeyboardButton(text=f"{page} / {total_pages}", callback_data="noop")
         )
 
         if page < total_pages:
             nav_row.append(
-                InlineKeyboardButton(text="▶️", callback_data=f"cab:my_stores:{page + 1}")
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"cab:my_stores:{page + 1}"
+                )
             )
         else:
             nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
@@ -177,9 +179,7 @@ def get_user_mappings_kb(
             nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
 
         nav_row.append(
-            InlineKeyboardButton(
-                text=f"{page} / {total_pages}", callback_data="noop"
-            )
+            InlineKeyboardButton(text=f"{page} / {total_pages}", callback_data="noop")
         )
 
         if page < total_pages:

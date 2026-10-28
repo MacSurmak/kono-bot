@@ -90,7 +90,9 @@ async def process_list_users(callback: types.CallbackQuery):
     from storage import get_all_bot_users_paginated
     from keyboards.admin_kb import get_admin_users_list_kb
 
-    users, total_count = await get_all_bot_users_paginated(offset=offset, limit=page_size)
+    users, total_count = await get_all_bot_users_paginated(
+        offset=offset, limit=page_size
+    )
     if not users and page == 1:
         await callback.message.edit_text(t("admin_users_empty"))
         return
@@ -255,12 +257,16 @@ async def handle_search_mapping_input(message: types.Message, state: FSMContext)
 
     if prompt_id:
         try:
-            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+            await message.bot.delete_message(
+                chat_id=message.chat.id, message_id=prompt_id
+            )
         except Exception:
             pass
 
     page_size = 6
-    results, total_count = await search_mappings_for_admin_paginated(query, offset=0, limit=page_size)
+    results, total_count = await search_mappings_for_admin_paginated(
+        query, offset=0, limit=page_size
+    )
 
     if not results:
         await message.answer(t("admin_search_mapping_empty", query=query))
@@ -270,7 +276,9 @@ async def handle_search_mapping_input(message: types.Message, state: FSMContext)
     total_pages = max(1, (total_count + page_size - 1) // page_size)
     await message.answer(
         t("admin_search_mapping_results", count=total_count),
-        reply_markup=get_admin_mappings_kb(results, query=query, page=1, total_pages=total_pages),
+        reply_markup=get_admin_mappings_kb(
+            results, query=query, page=1, total_pages=total_pages
+        ),
         parse_mode="HTML",
     )
 
@@ -290,11 +298,15 @@ async def process_mapping_search_page(callback: types.CallbackQuery):
 
     page_size = 6
     offset = (page - 1) * page_size
-    results, total_count = await search_mappings_for_admin_paginated(query, offset=offset, limit=page_size)
+    results, total_count = await search_mappings_for_admin_paginated(
+        query, offset=offset, limit=page_size
+    )
 
     total_pages = max(1, (total_count + page_size - 1) // page_size)
     await callback.message.edit_reply_markup(
-        reply_markup=get_admin_mappings_kb(results, query=query, page=page, total_pages=total_pages)
+        reply_markup=get_admin_mappings_kb(
+            results, query=query, page=page, total_pages=total_pages
+        )
     )
 
 

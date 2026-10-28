@@ -36,9 +36,7 @@ def get_admin_users_list_kb(
             nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
 
         nav_row.append(
-            InlineKeyboardButton(
-                text=f"{page} / {total_pages}", callback_data="noop"
-            )
+            InlineKeyboardButton(text=f"{page} / {total_pages}", callback_data="noop")
         )
 
         if page < total_pages:
@@ -225,9 +223,7 @@ def get_admin_mappings_kb(
             nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
 
         nav_row.append(
-            InlineKeyboardButton(
-                text=f"{page} / {total_pages}", callback_data="noop"
-            )
+            InlineKeyboardButton(text=f"{page} / {total_pages}", callback_data="noop")
         )
 
         if page < total_pages:
