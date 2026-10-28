@@ -1,6 +1,8 @@
 import xml.sax.saxutils as xml_escape
 from models import RawInvoiceDocument
 
+DEFAULT_INVOICE_INCOMING_TIME = "12:00:00"
+
 
 def build_iiko_xml(
     doc: RawInvoiceDocument, store_id: str, supplier_id: str, matched_items: list
@@ -33,15 +35,15 @@ def build_iiko_xml(
 
     items_xml = "".join(item_blocks)
 
+    incoming_datetime = f"{doc.doc_date}T{DEFAULT_INVOICE_INCOMING_TIME}"
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <document>
     <incomingDocumentNumber>{escaped_doc_num}</incomingDocumentNumber>
     <incomingDate>{doc.doc_date}</incomingDate>
-    <dateIncoming>{doc.doc_date}T12:00:00</dateIncoming>
+    <dateIncoming>{incoming_datetime}</dateIncoming>
     <status>NOT_PROCESSED</status>
     <supplier>{supplier_id}</supplier>
     <defaultStore>{store_id}</defaultStore>
-    <comment></comment>
     <items>{items_xml}
     </items>
 </document>"""

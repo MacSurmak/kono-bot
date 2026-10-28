@@ -18,7 +18,11 @@ from parsers import parse_document
 from services.crypto import decrypt_secret
 from services.iiko_client import client, IikoApiError
 from services.invoice_service import build_iiko_xml
-from services.item_matcher import find_catalog_candidates
+from services.item_matcher import (
+    find_catalog_candidates,
+    MIN_ACCEPTABLE_SCORE,
+    FUZZY_SUPPLIER_SEARCH_LIMIT,
+)
 from storage import (
     get_consensus_mapping,
     record_mapping_vote,
@@ -334,12 +338,15 @@ async def execute_parse_and_alignment(
                 supp_names = [s["name"] for s in all_suppliers]
                 raw_supp_name = parsed_doc.supplier_name
                 top_matches = process.extract(
-                    raw_supp_name, supp_names, limit=4, scorer=fuzz.token_sort_ratio
+                    raw_supp_name,
+                    supp_names,
+                    limit=FUZZY_SUPPLIER_SEARCH_LIMIT,
+                    scorer=fuzz.token_sort_ratio,
                 )
 
                 fuzzy_candidates = []
                 for name, score, _ in top_matches:
-                    if score >= 45:
+                    if score >= MIN_ACCEPTABLE_SCORE:
                         match_supp = next(
                             (s for s in all_suppliers if s["name"] == name), None
                         )

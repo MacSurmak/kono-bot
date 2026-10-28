@@ -1,6 +1,7 @@
 import asyncio
 from aiogram import Router, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from loguru import logger
@@ -153,8 +154,10 @@ async def process_login_input(message: types.Message, state: FSMContext):
             await message.bot.delete_message(
                 chat_id=message.chat.id, message_id=prompt_id
             )
-        except Exception:
+        except TelegramBadRequest:
             pass
+        except Exception as err:
+            logger.warning(f"Could not delete login prompt message {prompt_id}: {err}")
 
     await state.set_state(UserCabinetState.waiting_iiko_password)
     pwd_msg = await message.answer(
@@ -186,8 +189,10 @@ async def process_password_input(message: types.Message, state: FSMContext):
             await message.bot.delete_message(
                 chat_id=message.chat.id, message_id=prompt_id
             )
-        except Exception:
+        except TelegramBadRequest:
             pass
+        except Exception as err:
+            logger.warning(f"Could not delete password prompt message {prompt_id}: {err}")
 
     if not login or not password:
         await message.answer(t("cab_creds_empty"))

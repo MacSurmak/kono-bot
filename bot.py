@@ -7,7 +7,7 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 from loguru import logger
 
-from config import cfg
+from config import cfg, SESSION_CLEANUP_TTL_SECONDS
 from storage import init_db, close_db, cleanup_stale_sessions
 from middlewares.auth import AuthMiddleware
 from middlewares.throttling import ThrottlingMiddleware
@@ -25,7 +25,7 @@ async def run_garbage_collector():
     while True:
         try:
             await asyncio.sleep(900)  # Every 15 minutes
-            stale_doc_ids = await cleanup_stale_sessions(3600)
+            stale_doc_ids = await cleanup_stale_sessions(SESSION_CLEANUP_TTL_SECONDS)
             if stale_doc_ids:
                 cleaned_files = 0
                 if os.path.exists(TMP_DIR):
