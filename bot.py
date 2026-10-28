@@ -1,3 +1,15 @@
+# ==============================================================================
+# ARCHITECTURAL INVARIANT: MODULE LOAD ORDER & TOP-LEVEL IMPORT DISCIPLINE
+#
+# RULE: All module dependencies MUST be explicitly declared at the top of the file
+# according to PEP 8 standards. Fail-Fast on boot: if any dependency or symbol
+# is missing, the application must crash loudly during container initialization.
+#
+# FORBIDDEN:
+# - Placing `import` statements inside functions or coroutines (lazy imports).
+# - Swallowing initialization errors to mask missing infrastructure.
+# ==============================================================================
+
 import os
 import shutil
 import asyncio

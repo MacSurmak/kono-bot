@@ -406,6 +406,17 @@ async def toggle_user_store(user_id: int, store_id: str, store_name: str) -> boo
 
 
 # ================= MAPPINGS, CONSENSUS & GOVERNANCE =================
+# ==============================================================================
+# ARCHITECTURAL INVARIANT: PERSISTENCE LAYER STRICT VALIDATION & ZERO FALLBACKS
+#
+# RULE: Storage layer functions must strictly validate data invariants before
+# executing SQL mutations. Invariant violations must abort immediately.
+#
+# FORBIDDEN:
+# - Coercing corrupted or non-positive multipliers via `else 1.0`.
+# - Falling back to hardcoded default roles or database connection credentials.
+# ==============================================================================
+
 async def record_mapping_vote(
     supplier_id: str,
     raw_name: str,

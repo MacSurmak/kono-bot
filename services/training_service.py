@@ -153,6 +153,17 @@ async def simulate_batch_training(
     )
     iiko_docs = inv_root.findall(".//document")
 
+    # ==========================================================================
+    # ARCHITECTURAL INVARIANT: PARSING FAIL-FAST & ZERO FAKE ZEROS
+    #
+    # RULE: When parsing documents from external ERP or XML, required numerical
+    # fields (sum, amount) must be present.
+    #
+    # FORBIDDEN:
+    # - Using `findtext("sum", 0)` or `findtext("amount", 0)` to substitute
+    #   missing structural elements with fake zeros.
+    # ==========================================================================
+
     # Index iiko documents by (supplier_id, documentNumber) and unique sums
     iiko_by_supp_and_num = {}
     iiko_by_supp_and_sum = {}

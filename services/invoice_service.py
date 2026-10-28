@@ -1,3 +1,14 @@
+# ==============================================================================
+# ARCHITECTURAL INVARIANT: COMPUTATIONAL FAIL-FAST & MATHEMATICAL INVARIANTS
+#
+# RULE: Calculations for physical inventory amounts and unit prices must be strictly
+# verified. Quantities must be strictly positive before computing unit prices.
+#
+# FORBIDDEN:
+# - Dividing by zero or falling back to raw unit price `else it["price"]`.
+# - Injecting empty stub tags (e.g. `<comment></comment>`) into payloads.
+# ==============================================================================
+
 import xml.sax.saxutils as xml_escape
 from models import RawInvoiceDocument
 

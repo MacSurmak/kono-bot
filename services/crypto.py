@@ -19,6 +19,20 @@ def _get_encryption_key() -> bytes:
     return key.strip().encode("utf-8")
 
 
+# ==============================================================================
+# ARCHITECTURAL INVARIANT: STRICT CRYPTOGRAPHIC CONTRACTS & ZERO FAKE VALUES
+#
+# RULE: Cryptographic routines must enforce strict non-empty input invariants.
+#
+# FORBIDDEN:
+# - Returning fake empty bytes `b""` or empty strings `""` on empty/None inputs.
+# - Masking missing credentials by passing dummy values through encryption.
+#
+# RATIONALE:
+# Passing empty strings through crypto masks missing secrets upstream, turning
+# an authentication failure into a silent corruption bug.
+# ==============================================================================
+
 def encrypt_secret(plaintext: str) -> bytes:
     """Encrypts plaintext string using Fernet authenticated symmetric cipher."""
     if not plaintext or not plaintext.strip():

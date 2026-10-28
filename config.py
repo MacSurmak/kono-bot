@@ -83,13 +83,27 @@ def get_admin_ids() -> set[int]:
     return admin_ids
 
 
-# ================= SYSTEM-WIDE CONSTANTS (SSOT) =================
+# ==============================================================================
+# ARCHITECTURAL INVARIANT: ZERO MAGIC NUMBERS & DECLARATIVE SYSTEM CONSTANTS
+#
+# RULE: All algorithmic thresholds, buffer sizes, pagination limits, and TTL
+# durations must be explicitly declared as typed constants in this section.
+#
+# FORBIDDEN:
+# - Embedding inline numeric literals (magic numbers like 6, 8, 600, 3600)
+#   directly into SQL queries, slice limits, or API calls across the codebase.
+# - Providing silent fallback defaults (e.g. `or "localhost"`) if an environment
+#   variable is required for operational integrity.
+# ==============================================================================
+
+# Pagination limits
 PAGE_SIZE_USERS = 6
 PAGE_SIZE_MAPPINGS = 6
 PAGE_SIZE_STORES = 6
 PAGE_SIZE_INVOICE_STORES = 5
 PAGE_SIZE_REVIEW_ITEMS = 8
 
+# Cache and lifecycle durations
 CACHE_TTL_CATALOG_SECONDS = 600.0
 CACHE_TTL_SUPPLIERS_SECONDS = 600.0
 SESSION_CLEANUP_TTL_SECONDS = 3600

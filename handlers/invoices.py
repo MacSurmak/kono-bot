@@ -726,6 +726,15 @@ async def handle_custom_coeff_input(message: types.Message, state: FSMContext):
         await message.answer(t("invoice_custom_coeff_invalid"))
         return
 
+    # ==========================================================================
+    # ARCHITECTURAL INVARIANT: SPECIFIC EXCEPTION CATCHING ON UI MUTATIONS
+    #
+    # RULE: When purging ephemeral prompt messages, strictly catch `TelegramBadRequest`
+    # (for messages already purged by user). Log any unexpected exceptions.
+    #
+    # FORBIDDEN:
+    # - Bare `except Exception: pass` which swallows network and permission faults.
+    # ==========================================================================
     data = await state.get_data()
     prompt_id = data.get("prompt_msg_id")
     if prompt_id:
@@ -737,6 +746,8 @@ async def handle_custom_coeff_input(message: types.Message, state: FSMContext):
             pass
         except Exception as err:
             logger.warning(f"Failed to delete prompt message {prompt_id}: {err}")
+
+    await state.clear()
 
     await state.clear()
     await apply_confirmed_item_match(

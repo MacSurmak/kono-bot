@@ -75,6 +75,17 @@ class IikoClient:
                 logger.warning(f"Failed to cache token in Redis: {e}")
         return token
 
+    # ==========================================================================
+    # ARCHITECTURAL INVARIANT: LOGICAL TELEMETRY OVER BLIND EXCEPTION SUPPRESSION
+    #
+    # RULE: Infrastructure operations (cache reads, session invalidations) must
+    # never use bare `except Exception: pass`. Errors must be logged with context.
+    #
+    # FORBIDDEN:
+    # - Silently ignoring Redis connection drops or cache corruptions.
+    # - Using invented fallback folder names (e.g. "Корень") to mask tree bugs.
+    # ==========================================================================
+
     def invalidate_user_token(self, login: str) -> None:
         """Purges cached token from Redis."""
         cache_key = f"cache:iiko:token:{login}"

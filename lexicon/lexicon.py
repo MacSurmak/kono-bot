@@ -1,3 +1,18 @@
+# ==============================================================================
+# ARCHITECTURAL INVARIANT: SINGLE SOURCE OF TRUTH (SSOT) FOR PRESENTATION LAYER
+#
+# RULE: 100% of user-facing strings, labels, badges, alert texts, and button
+# templates MUST reside strictly within this lexicon registry.
+#
+# FORBIDDEN:
+# - Hardcoding raw natural language strings inside handlers, services, or keyboards.
+# - Constructing UI text via raw string formatting outside of this module.
+#
+# RATIONALE:
+# Scattered UI strings make dynamic localization, tone-of-voice updates, and
+# linguistic auditing impossible, violating the Single Source of Truth principle.
+# ==============================================================================
+
 from typing import Dict
 from aiogram import Bot
 from aiogram.types import BotCommand
