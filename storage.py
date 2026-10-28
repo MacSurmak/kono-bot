@@ -415,11 +415,9 @@ async def record_mapping_vote(
     source: str = "manual",
 ) -> None:
     clean_name = normalize_item_name(raw_name)
-    safe_coeff = (
-        float(package_coefficient)
-        if package_coefficient and package_coefficient > 0
-        else 1.0
-    )
+    if package_coefficient is None or float(package_coefficient) <= 0:
+        raise ValueError(f"Invalid package_coefficient '{package_coefficient}': must be a strictly positive float.")
+    safe_coeff = float(package_coefficient)
 
     pool = get_db_pool()
     async with pool.acquire() as conn:
@@ -483,9 +481,9 @@ async def get_consensus_mapping(
     total_votes = sum(r["usage_count"] for r in rows)
     winner = rows[0]
     confidence = winner["usage_count"] / total_votes
-    coeff = (
-        float(winner["package_coefficient"]) if winner["package_coefficient"] else 1.0
-    )
+    if winner["package_coefficient"] is None or float(winner["package_coefficient"]) <= 0:
+        raise ValueError(f"Database corruption: mapping id={winner['id']} has non-positive package_coefficient.")
+    coeff = float(winner["package_coefficient"])
 
     return {
         "product_id": winner["product_id"],

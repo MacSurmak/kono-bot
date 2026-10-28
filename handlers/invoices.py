@@ -4,6 +4,7 @@ import time
 import asyncio
 from typing import Dict, Any, List, Optional
 from aiogram import Router, types, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from rapidfuzz import process, fuzz
@@ -12,7 +13,7 @@ from loguru import logger
 from lexicon import t
 from models import RawInvoiceDocument
 from parsers import parse_document
-from services.iiko_client import client
+from services.iiko_client import client, IikoApiError
 from services.invoice_service import build_iiko_xml
 from services.item_matcher import find_catalog_candidates
 from storage import (
@@ -102,7 +103,9 @@ async def cleanup_session_data(doc_id: str) -> None:
 async def handle_document_upload(message: types.Message):
     """Entrypoint for incoming invoices. Validates connected stores first before any parsing."""
     doc = message.document
-    filename = doc.file_name or "unknown_file"
+    if not doc.file_name or not doc.file_name.strip():
+        raise ValueError("Uploaded Telegram document is missing a valid filename.")
+    filename = doc.file_name.strip()
     ext = os.path.splitext(filename)[1].lower()
 
     if ext not in (".xml", ".pdf"):
@@ -707,10 +710,9 @@ async def process_coeff_selection(callback: types.CallbackQuery, state: FSMConte
         )
         return
 
-    try:
-        coeff = float(coeff_val)
-    except ValueError:
-        coeff = 1.0
+    coeff = float(coeff_val)
+    if coeff <= 0:
+        raise ValueError(f"Packaging multiplier must be positive, got: {coeff_val}")
 
     await apply_confirmed_item_match(
         callback, doc_id, item_idx, prod_id, coeff, is_new=False
@@ -736,8 +738,10 @@ async def handle_custom_coeff_input(message: types.Message, state: FSMContext):
             await message.bot.delete_message(
                 chat_id=message.chat.id, message_id=prompt_id
             )
-        except Exception:
+        except TelegramBadRequest:
             pass
+        except Exception as err:
+            logger.warning(f"Failed to delete prompt message {prompt_id}: {err}")
 
     await state.clear()
     await apply_confirmed_item_match(
@@ -1099,9 +1103,11 @@ async def process_draft_upload(callback: types.CallbackQuery):
         import xml.etree.ElementTree as ET
 
         if resp.status_code == 200 and "valid>true" in resp.text:
-            iiko_doc_num = (
-                ET.fromstring(resp.content).findtext("documentNumber") or "Создан"
-            )
+            root = ET.fromstring(resp.content)
+            raw_doc_num = root.findtext("documentNumber")
+            if not raw_doc_num or not raw_doc_num.strip():
+                raise IikoApiError(f"iiko draft creation succeeded but returned empty documentNumber: {resp.text[:300]}")
+            iiko_doc_num = raw_doc_num.strip()
             logger.info(
                 f"Draft invoice created in iiko by {login}: #{iiko_doc_num} (incoming: #{raw_doc.doc_number}) for store '{session['store_name']}'"
             )

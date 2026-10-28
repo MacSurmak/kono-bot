@@ -81,8 +81,8 @@ class IikoClient:
         if self.redis_client:
             try:
                 self.redis_client.delete(cache_key)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to invalidate token for '{login}' from Redis: {e}")
 
     def _request_with_user_auth(
         self,
@@ -138,8 +138,8 @@ class IikoClient:
                 self.session.get(
                     f"{self.base_url}/api/logout", params={"key": token}, timeout=5
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to logout test session key: {e}")
 
     def upload_invoice_as_user(
         self, target_store_id: str, xml_payload: str, login: str, password: str
@@ -164,8 +164,8 @@ class IikoClient:
                 cached = self.redis_client.get(cache_key)
                 if cached:
                     return json.loads(cached)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to read cached suppliers from Redis: {e}")
 
         resp = self._request_with_user_auth(login, password, "GET", "/api/suppliers")
         root = ET.fromstring(resp.content)
@@ -189,8 +189,8 @@ class IikoClient:
                 self.redis_client.setex(
                     cache_key, 600, json.dumps(suppliers, ensure_ascii=False)
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to write suppliers to Redis cache: {e}")
         return suppliers
 
     def get_active_stock_products_for_user(self, login: str, password: str) -> list:
@@ -201,8 +201,8 @@ class IikoClient:
                 cached = self.redis_client.get(cache_key)
                 if cached:
                     return json.loads(cached)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to read cached catalog from Redis: {e}")
 
         resp = self._request_with_user_auth(login, password, "GET", "/api/products")
         root = ET.fromstring(resp.content)
@@ -220,7 +220,7 @@ class IikoClient:
             name = p.findtext("name", "").strip()
             cat = p.findtext("productCategory", "").strip()
             parent_id = p.findtext("parentId")
-            folder_name = id_to_name.get(parent_id, "Корень")
+            folder_name = id_to_name.get(parent_id, "")
 
             if (
                 "архив" in folder_name.lower()
@@ -249,8 +249,8 @@ class IikoClient:
                 self.redis_client.setex(
                     cache_key, 600, json.dumps(clean_products, ensure_ascii=False)
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to write catalog to Redis cache: {e}")
         return clean_products
 
     def get_iiko_departments_for_user(self, login: str, password: str) -> list:

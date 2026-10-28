@@ -5,6 +5,7 @@ import shutil
 import asyncio
 from typing import Dict, Any
 from aiogram import Router, types, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from loguru import logger
@@ -87,8 +88,10 @@ async def _debounced_accumulator_update(
         if old_msg_id:
             try:
                 await bot.delete_message(chat_id=chat_id, message_id=old_msg_id)
-            except Exception:
+            except TelegramBadRequest:
                 pass
+            except Exception as err:
+                logger.warning(f"Failed to delete outdated status message {old_msg_id}: {err}")
 
         card_text = t(
             "admin_train_accumulator_title",
@@ -166,7 +169,9 @@ async def process_accumulate_document(message: types.Message, state: FSMContext)
         return
 
     doc = message.document
-    filename = (doc.file_name or "unknown").lower()
+    if not doc.file_name or not doc.file_name.strip():
+        raise ValueError("Uploaded training document is missing a valid filename.")
+    filename = doc.file_name.strip().lower()
     ext = os.path.splitext(filename)[1]
 
     if ext not in (".zip", ".xml", ".pdf"):
@@ -185,8 +190,8 @@ async def process_accumulate_document(message: types.Message, state: FSMContext)
             if os.path.exists(temp_file):
                 try:
                     os.remove(temp_file)
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.warning(f"Failed to remove temp file '{temp_file}': {e}")
 
     # Debounce interface update to settle multiple concurrent document uploads
     existing_task = _DEBOUNCE_TASKS.get(batch_id)

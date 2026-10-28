@@ -159,7 +159,13 @@ async def simulate_batch_training(
         s_id = (d.findtext("supplier") or "").strip()
         inc_num = (d.findtext("incomingDocumentNumber") or "").strip()
         items = d.findall(".//items/item")
-        doc_sum = round(sum(float(it.findtext("sum", 0)) for it in items), 2)
+        item_sums = []
+        for it in items:
+            raw_sum = it.findtext("sum")
+            if raw_sum is None or not raw_sum.strip():
+                raise BatchTrainingError(f"iiko invoice #{inc_num} contains item missing required 'sum' element.")
+            item_sums.append(float(raw_sum))
+        doc_sum = round(sum(item_sums), 2)
         if s_id and inc_num:
             iiko_by_supp_and_num[(s_id, inc_num)] = d
         if s_id and doc_sum > 0:
@@ -207,13 +213,22 @@ async def simulate_batch_training(
             if p_id not in active_pool:
                 has_inactive = True
                 break
+
+            raw_amount = it.findtext("amount")
+            if raw_amount is None or not raw_amount.strip():
+                raise BatchTrainingError(f"iiko invoice #{iiko_num} item missing required 'amount' element.")
+
+            raw_sum = it.findtext("sum")
+            if raw_sum is None or not raw_sum.strip():
+                raise BatchTrainingError(f"iiko invoice #{iiko_num} item missing required 'sum' element.")
+
             iiko_items.append(
                 {
                     "product_id": p_id,
                     "name": active_pool[p_id]["name"],
                     "article": active_pool[p_id]["article"],
-                    "amount": float(it.findtext("amount", 0)),
-                    "sum": round(float(it.findtext("sum", 0)), 2),
+                    "amount": float(raw_amount),
+                    "sum": round(float(raw_sum), 2),
                 }
             )
 
