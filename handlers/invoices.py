@@ -2,8 +2,10 @@ import os
 import uuid
 import time
 import asyncio
+import xml.etree.ElementTree as ET
 from typing import Dict, Any, List, Optional
 from aiogram import Router, types, F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -13,6 +15,7 @@ from loguru import logger
 from lexicon import t
 from models import RawInvoiceDocument
 from parsers import parse_document
+from services.crypto import decrypt_secret
 from services.iiko_client import client, IikoApiError
 from services.invoice_service import build_iiko_xml
 from services.item_matcher import find_catalog_candidates
@@ -22,9 +25,21 @@ from storage import (
     get_preferred_supplier,
     save_preferred_supplier,
     get_user_stores,
+    get_bot_user,
     save_invoice_session,
     get_invoice_session,
     delete_invoice_session,
+)
+from keyboards.invoices_kb import (
+    get_invoice_store_choice_kb,
+    get_fuzzy_supplier_kb,
+    get_supplier_disambiguation_kb,
+    get_upload_confirmation_kb,
+    get_item_resolution_kb,
+    get_packaging_coeff_kb,
+    get_items_review_kb,
+    get_upload_retry_kb,
+    get_setup_creds_kb,
 )
 
 

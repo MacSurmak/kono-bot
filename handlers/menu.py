@@ -95,8 +95,6 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
         else "<i>❌ Не настроен</i>"
     )
 
-    from storage import get_user_stores
-
     user_stores = await get_user_stores(user_id)
     stores_str = (
         ", ".join(s["name"] for s in user_stores)

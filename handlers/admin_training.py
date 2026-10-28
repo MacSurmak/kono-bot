@@ -5,6 +5,7 @@ import shutil
 import asyncio
 from typing import Dict, Any
 from aiogram import Router, types, F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -12,11 +13,13 @@ from loguru import logger
 
 from lexicon import t
 from config import get_admin_ids
+from services.crypto import decrypt_secret
 from services.training_service import (
     safe_extract_zip,
     simulate_batch_training,
     apply_batch_training,
 )
+from storage import is_admin_user, get_bot_user
 from keyboards.admin_kb import (
     get_training_accumulator_kb,
     get_training_confirmation_kb,
