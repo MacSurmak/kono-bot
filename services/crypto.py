@@ -21,8 +21,8 @@ def _get_encryption_key() -> bytes:
 
 def encrypt_secret(plaintext: str) -> bytes:
     """Encrypts plaintext string using Fernet authenticated symmetric cipher."""
-    if not plaintext:
-        return b""
+    if not plaintext or not plaintext.strip():
+        raise ValueError("Cannot encrypt an empty or whitespace-only plaintext string.")
     try:
         cipher = Fernet(_get_encryption_key())
         return cipher.encrypt(plaintext.encode("utf-8"))
@@ -34,7 +34,7 @@ def encrypt_secret(plaintext: str) -> bytes:
 def decrypt_secret(ciphertext: Optional[bytes]) -> str:
     """Decrypts ciphertext bytes back to original plaintext string."""
     if not ciphertext:
-        return ""
+        raise ValueError("Cannot decrypt empty or None ciphertext payload.")
     try:
         cipher = Fernet(_get_encryption_key())
         return cipher.decrypt(ciphertext).decode("utf-8")

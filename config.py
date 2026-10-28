@@ -67,10 +67,17 @@ cfg = load_and_validate_config()
 
 
 def get_admin_ids() -> set[int]:
-    """Retrieves set of admin Telegram IDs from configuration."""
-    tg = cfg.get("telegram", {})
+    """Retrieves set of admin Telegram IDs from configuration with fail-fast validation."""
+    tg = cfg.get("telegram")
+    if not isinstance(tg, dict):
+        raise ConfigurationError("Missing or invalid 'telegram' configuration section")
+
+    admin_ids = set()
     if "admin_ids" in tg and isinstance(tg["admin_ids"], list):
-        return {int(x) for x in tg["admin_ids"]}
-    if "admin_id" in tg and tg["admin_id"]:
-        return {int(tg["admin_id"])}
-    return set()
+        admin_ids.update(int(x) for x in tg["admin_ids"] if str(x).isdigit())
+    if "admin_id" in tg and tg["admin_id"] and str(tg["admin_id"]).isdigit():
+        admin_ids.add(int(tg["admin_id"]))
+
+    if not admin_ids:
+        raise ConfigurationError("At least one valid integer admin Telegram ID must be configured in 'telegram.admin_ids'")
+    return admin_ids

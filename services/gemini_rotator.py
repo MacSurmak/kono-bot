@@ -6,7 +6,9 @@ from google import genai
 from loguru import logger
 from config import cfg
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL")
+if not REDIS_URL or not REDIS_URL.strip():
+    raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set.")
 
 
 class GeminiRotator:
@@ -16,33 +18,32 @@ class GeminiRotator:
         self.model_name: str = gemini_cfg["model"]
         self.thinking_level: str = gemini_cfg["thinking_level"]
         self.max_output_tokens: int = int(gemini_cfg["max_output_tokens"])
-        self._local_counts: Dict[str, int] = {}
+
         try:
-            self._redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
-        except Exception:
-            self._redis = None
+            self._redis = redis.Redis.from_url(REDIS_URL.strip(), decode_responses=True)
+            self._redis.ping()
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to Redis for Gemini rotator: {e}") from e
 
     def _get_key_usage(self, key_name: str) -> int:
-        if self._redis:
-            try:
-                val = self._redis.get(f"gemini:key:{key_name}:requests")
-                if val is not None:
-                    return int(val)
-            except Exception:
-                pass
-        return self._local_counts.get(key_name, 0)
+        try:
+            val = self._redis.get(f"gemini:key:{key_name}:requests")
+            if val is not None:
+                return int(val)
+            return 0
+        except Exception as e:
+            logger.warning(f"Failed to read usage stats for key '{key_name}' from Redis: {e}")
+            return 0
 
     def _record_key_stat(
         self, key_name: str, success: bool, is_rate_limit: bool = False
     ) -> None:
-        if self._redis:
-            try:
-                self._redis.incr(f"gemini:key:{key_name}:requests")
-                if is_rate_limit:
-                    self._redis.incr(f"gemini:key:{key_name}:rate_limits")
-            except Exception:
-                pass
-        self._local_counts[key_name] = self._local_counts.get(key_name, 0) + 1
+        try:
+            self._redis.incr(f"gemini:key:{key_name}:requests")
+            if is_rate_limit:
+                self._redis.incr(f"gemini:key:{key_name}:rate_limits")
+        except Exception as e:
+            logger.warning(f"Failed to record telemetry for key '{key_name}' in Redis: {e}")
 
     def _get_sorted_keys(self, exclude_names: Set[str]) -> List[Dict[str, str]]:
         """Sorts available keys in ascending order of invocation counts (least used first)."""
