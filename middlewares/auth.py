@@ -1,8 +1,10 @@
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
+from loguru import logger
 from config import cfg, get_admin_ids
 from storage import get_bot_user, upsert_bot_user
+from lexicon import t
 
 get_configured_admin_ids = get_admin_ids
 
@@ -47,9 +49,6 @@ class AuthMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Reject unauthorized access loudly and record audit log
-        from loguru import logger
-        from lexicon import t
-
         logger.warning(
             f"Unauthorized access blocked: user_id={user.id}, username=@{user.username}, full_name='{user.full_name}'"
         )

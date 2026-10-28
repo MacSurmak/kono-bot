@@ -113,16 +113,12 @@ async def handle_document_upload(message: types.Message):
         return
 
     # Fail-Fast: verify operator has connected stores
-    from storage import get_user_stores, get_bot_user
-
     operator = await get_bot_user(message.from_user.id)
     if (
         not operator
         or not operator.get("iiko_login")
         or not operator.get("iiko_password_encrypted")
     ):
-        from keyboards.invoices_kb import get_setup_creds_kb
-
         await message.answer(
             t("invoice_no_creds_error"),
             reply_markup=get_setup_creds_kb("setup"),
@@ -132,8 +128,6 @@ async def handle_document_upload(message: types.Message):
 
     user_stores = await get_user_stores(message.from_user.id)
     if not user_stores:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -170,8 +164,6 @@ async def handle_document_upload(message: types.Message):
     }
     await save_invoice_session(doc_id, message.from_user.id, session_data)
 
-    from services.crypto import decrypt_secret
-
     login = operator["iiko_login"]
     password = decrypt_secret(operator["iiko_password_encrypted"])
 
@@ -193,8 +185,6 @@ async def handle_document_upload(message: types.Message):
         )
     else:
         # Multiple stores connected -> Operator chooses target store with paginated view
-        from keyboards.invoices_kb import get_invoice_store_choice_kb
-
         await message.answer(
             t("invoice_select_store_first", filename=filename),
             reply_markup=get_invoice_store_choice_kb(doc_id, user_stores, page=1),
@@ -207,9 +197,6 @@ async def process_store_page_choice(callback: types.CallbackQuery):
     """Paginates store list for incoming invoice."""
     parts = callback.data.split(":")
     doc_id, page = parts[2], int(parts[3])
-
-    from storage import get_user_stores
-    from keyboards.invoices_kb import get_invoice_store_choice_kb
 
     session = await get_invoice_session(doc_id)
     if not session:
@@ -232,9 +219,6 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
-
-    from storage import get_user_stores, get_bot_user
-    from services.crypto import decrypt_secret
 
     operator = await get_bot_user(callback.from_user.id)
     if (
@@ -338,8 +322,6 @@ async def execute_parse_and_alignment(
                             fuzzy_candidates.append({**match_supp, "score": score})
 
                 if fuzzy_candidates:
-                    from keyboards.invoices_kb import get_fuzzy_supplier_kb
-
                     await message.edit_text(
                         t(
                             "invoice_supplier_not_found_fuzzy",
@@ -365,8 +347,6 @@ async def execute_parse_and_alignment(
                 session["supplier_name"] = candidates[0]["name"]
                 await save_invoice_session(doc_id, session["user_id"], session)
             else:
-                from keyboards.invoices_kb import get_supplier_disambiguation_kb
-
                 await message.edit_text(
                     t("invoice_supplier_conflict", inn=supplier_inn),
                     reply_markup=get_supplier_disambiguation_kb(doc_id, candidates),
@@ -391,9 +371,6 @@ async def process_supplier_disambiguation(callback: types.CallbackQuery):
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
-
-    from storage import get_bot_user
-    from services.crypto import decrypt_secret
 
     operator = await get_bot_user(callback.from_user.id)
     login = operator["iiko_login"]
@@ -465,8 +442,6 @@ async def proceed_with_item_alignment(
     await save_invoice_session(doc_id, session["user_id"], session)
 
     if not unresolved_items:
-        from keyboards.invoices_kb import get_upload_confirmation_kb
-
         await message.edit_text(
             t(
                 "invoice_all_matched_card",
@@ -494,7 +469,6 @@ async def prompt_next_unresolved_item(
     current = session["unresolved_items"][0]
     item = current["item"]
     total = len(session["parsed_doc"].get("items", []))
-    from keyboards.invoices_kb import get_item_resolution_kb
 
     article_val = item.get("article", "")
     article_info = (
@@ -537,8 +511,6 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
 
     current_item = target_entry["item"]
     await state.set_state(InvoiceState.waiting_manual_sku)
-
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     cancel_kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -589,9 +561,6 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         await message.answer(t("invoice_session_expired"))
         return
 
-    from storage import get_bot_user
-    from services.crypto import decrypt_secret
-
     operator = await get_bot_user(message.from_user.id)
     if (
         not operator
@@ -622,7 +591,6 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
 
     await state.clear()
     current_item = target_entry["item"]
-    from keyboards.invoices_kb import get_packaging_coeff_kb
 
     await message.answer(
         t(
@@ -653,9 +621,6 @@ async def process_manual_match(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    from storage import get_bot_user
-    from services.crypto import decrypt_secret
-
     operator = await get_bot_user(callback.from_user.id)
     login = operator["iiko_login"]
     password = decrypt_secret(operator["iiko_password_encrypted"])
@@ -667,7 +632,6 @@ async def process_manual_match(callback: types.CallbackQuery):
         return
 
     current_item = target_entry["item"]
-    from keyboards.invoices_kb import get_packaging_coeff_kb
 
     await callback.message.edit_text(
         t(
@@ -688,7 +652,6 @@ async def process_coeff_selection(callback: types.CallbackQuery, state: FSMConte
 
     if coeff_val == "custom":
         await state.set_state(InvoiceState.waiting_custom_coeff)
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         cancel_kb = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -789,9 +752,6 @@ async def apply_confirmed_item_match(
                 await target_msg.edit_text(t("invoice_session_expired"))
             return
 
-        from storage import get_bot_user
-        from services.crypto import decrypt_secret
-
         operator = await get_bot_user(session["user_id"])
         login = operator["iiko_login"]
         password = decrypt_secret(operator["iiko_password_encrypted"])
@@ -850,8 +810,6 @@ async def apply_confirmed_item_match(
         if session["unresolved_items"]:
             await prompt_next_unresolved_item(target_msg, doc_id, is_new=True)
         else:
-            from keyboards.invoices_kb import get_upload_confirmation_kb
-
             await target_msg.answer(
                 t(
                     "invoice_all_matched_card",
@@ -892,8 +850,6 @@ async def process_skip_item(callback: types.CallbackQuery):
         if session["unresolved_items"]:
             await prompt_next_unresolved_item(callback.message, doc_id)
         else:
-            from keyboards.invoices_kb import get_upload_confirmation_kb
-
             await callback.message.edit_text(
                 t(
                     "invoice_all_matched_card",
@@ -920,8 +876,6 @@ async def process_review_items_click(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    from keyboards.invoices_kb import get_items_review_kb
-
     doc_num = session["parsed_doc"].get("doc_number") or "Б/Н"
     await callback.message.edit_text(
         t("invoice_review_title", doc_number=doc_num),
@@ -941,8 +895,6 @@ async def process_review_page_change(callback: types.CallbackQuery):
         await callback.message.edit_text(t("invoice_session_expired"))
         return
 
-    from keyboards.invoices_kb import get_items_review_kb
-
     await callback.message.edit_reply_markup(
         reply_markup=get_items_review_kb(doc_id, session["matched_items"], page=page)
     )
@@ -956,8 +908,6 @@ async def process_review_done_click(callback: types.CallbackQuery):
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
-
-    from keyboards.invoices_kb import get_upload_confirmation_kb
 
     await callback.message.edit_text(
         t(
@@ -1009,9 +959,6 @@ async def process_edit_matched_item(callback: types.CallbackQuery):
                 f"Original raw item for line #{item_num} not found in parsed document."
             )
 
-        from storage import get_bot_user
-        from services.crypto import decrypt_secret
-
         operator = await get_bot_user(session["user_id"])
         login = operator["iiko_login"]
         password = decrypt_secret(operator["iiko_password_encrypted"])
@@ -1041,10 +988,6 @@ async def process_draft_upload(callback: types.CallbackQuery):
     if not session:
         await callback.message.edit_text(t("invoice_session_expired"))
         return
-
-    from storage import get_bot_user
-    from services.crypto import decrypt_secret
-    from keyboards.invoices_kb import get_upload_retry_kb, get_setup_creds_kb
 
     # Verify operator has configured iiko credentials
     operator = await get_bot_user(callback.from_user.id)
@@ -1100,7 +1043,6 @@ async def process_draft_upload(callback: types.CallbackQuery):
             login,
             password,
         )
-        import xml.etree.ElementTree as ET
 
         if resp.status_code == 200 and "valid>true" in resp.text:
             root = ET.fromstring(resp.content)

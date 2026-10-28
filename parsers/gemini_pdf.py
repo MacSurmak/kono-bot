@@ -1,5 +1,6 @@
 import io
 import base64
+from loguru import logger
 from pypdf import PdfReader, PdfWriter
 from models import RawInvoiceDocument, RawInvoiceItem, InvoiceDocumentSchema
 from services.gemini_rotator import rotator
@@ -25,8 +26,6 @@ def normalize_pdf_rotation(file_path: str) -> bytes:
             writer.write(buf)
             return buf.getvalue()
     except Exception as e:
-        from loguru import logger
-
         logger.warning(
             f"Failed to normalize PDF rotation for '{file_path}': {e}. Using raw file bytes."
         )

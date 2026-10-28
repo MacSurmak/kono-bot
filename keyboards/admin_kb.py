@@ -1,8 +1,7 @@
+import base64
+from typing import List, Dict, Any, Optional
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from lexicon import t
-
-
-from typing import List, Dict, Any, Optional
 
 
 def get_admin_users_list_kb(
@@ -208,8 +207,6 @@ def get_admin_mappings_kb(
         )
 
     if total_pages > 1:
-        import base64
-
         encoded_q = base64.urlsafe_b64encode(query.encode("utf-8")).decode("ascii")
         nav_row = []
         if page > 1:

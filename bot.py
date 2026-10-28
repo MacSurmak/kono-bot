@@ -22,8 +22,6 @@ TMP_DIR = os.path.join(
 
 async def run_garbage_collector():
     """Periodically purges stale database sessions and orphaned temporary files."""
-    from storage import cleanup_stale_sessions
-
     while True:
         try:
             await asyncio.sleep(900)  # Every 15 minutes

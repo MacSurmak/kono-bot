@@ -1,19 +1,24 @@
 import re
+import base64
 from aiogram import Router, types, F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from loguru import logger
 
-from config import cfg
+from config import cfg, get_admin_ids
 from services.iiko_client import client
 from keyboards.admin_kb import (
     get_admin_main_kb,
     get_admin_mappings_kb,
+    get_admin_users_list_kb,
+    get_user_manage_card_kb,
 )
 from storage import (
     create_invite_token,
     get_all_bot_users,
+    get_all_bot_users_paginated,
     get_bot_user,
     set_user_role,
     set_user_active,
@@ -21,6 +26,7 @@ from storage import (
     search_mappings_for_admin_paginated,
     search_mappings_for_admin,
     delete_mapping_by_id,
+    get_user_stores,
 )
 from lexicon import t
 
@@ -63,8 +69,6 @@ async def process_create_invite(callback: types.CallbackQuery):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
 
-    from loguru import logger
-
     bot_info = await callback.bot.get_me()
     token = await create_invite_token(created_by=callback.from_user.id)
     invite_url = f"https://t.me/{bot_info.username}?start=inv_{token}"
@@ -86,9 +90,6 @@ async def process_list_users(callback: types.CallbackQuery):
     page = int(parts[2]) if len(parts) > 2 else 1
     page_size = 6
     offset = (page - 1) * page_size
-
-    from storage import get_all_bot_users_paginated
-    from keyboards.admin_kb import get_admin_users_list_kb
 
     users, total_count = await get_all_bot_users_paginated(
         offset=offset, limit=page_size
@@ -117,12 +118,6 @@ async def process_view_user_card(callback: types.CallbackQuery):
     if not target_user:
         await callback.answer(t("admin_users_empty"), show_alert=True)
         return
-
-    from keyboards.admin_kb import get_user_manage_card_kb
-    from storage import get_all_managed_stores
-    from config import get_admin_ids
-
-    from storage import get_user_stores
 
     is_primary = target_id in get_admin_ids()
     user_stores = await get_user_stores(target_id)
@@ -173,8 +168,6 @@ async def process_change_user_role(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     target_id, new_role = int(parts[2]), parts[3]
 
-    from config import get_admin_ids
-
     if target_id in get_admin_ids() and new_role != "admin":
         await callback.answer(t("admin_cannot_modify_primary"), show_alert=True)
         return
@@ -196,8 +189,6 @@ async def process_toggle_user_active(callback: types.CallbackQuery):
 
     parts = callback.data.split(":")
     target_id, is_active_val = int(parts[2]), bool(int(parts[3]))
-
-    from config import get_admin_ids
 
     if target_id in get_admin_ids() and not is_active_val:
         await callback.answer(t("admin_cannot_modify_primary"), show_alert=True)
@@ -229,7 +220,6 @@ async def process_manage_mappings(callback: types.CallbackQuery, state: FSMConte
     if not await is_admin_user(callback.from_user.id):
         return
     await state.set_state(AdminState.waiting_search_mapping)
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     cancel_kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -288,9 +278,6 @@ async def process_mapping_search_page(callback: types.CallbackQuery):
     """Handles pagination for mapping search results."""
     if not await is_admin_user(callback.from_user.id):
         return
-
-    import base64
-    from storage import search_mappings_for_admin_paginated
 
     parts = callback.data.split(":")
     encoded_q, page = parts[2], int(parts[3])

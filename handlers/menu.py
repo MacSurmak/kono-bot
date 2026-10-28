@@ -1,5 +1,6 @@
 import asyncio
 from aiogram import Router, types, F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from loguru import logger
@@ -13,6 +14,8 @@ from storage import (
     update_user_iiko_credentials,
     get_user_stores,
     toggle_user_store,
+    get_user_mappings,
+    revoke_user_mapping,
 )
 from keyboards.menu_kb import (
     get_main_menu_kb,
@@ -21,6 +24,7 @@ from keyboards.menu_kb import (
     get_cancel_input_kb,
     get_user_mappings_kb,
 )
+from keyboards.invoices_kb import get_setup_creds_kb
 
 router = Router(name="menu_router")
 
@@ -45,8 +49,6 @@ async def process_back_main_menu(callback: types.CallbackQuery, state: FSMContex
 @router.callback_query(F.data == "menu:upload_info")
 async def process_upload_info(callback: types.CallbackQuery):
     """Explains invoice upload workflow to operator."""
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -64,8 +66,6 @@ async def process_upload_info(callback: types.CallbackQuery):
 @router.callback_query(F.data == "menu:help")
 async def process_menu_help(callback: types.CallbackQuery):
     """Displays user assistance manual with return button."""
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -204,8 +204,6 @@ async def process_password_input(message: types.Message, state: FSMContext):
         logger.info(
             f"User {message.from_user.id} (@{message.from_user.username}) successfully bound iiko account: '{login}'"
         )
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -223,8 +221,6 @@ async def process_password_input(message: types.Message, state: FSMContext):
 
     except Exception as e:
         logger.warning(f"Failed iiko credential authentication for '{login}': {e}")
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -275,18 +271,12 @@ async def process_view_my_mappings(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     page = int(parts[2]) if len(parts) > 2 else 1
     page_size = 6
-
-    from storage import get_user_mappings
-    from keyboards.menu_kb import get_user_mappings_kb
-
     offset = (page - 1) * page_size
     mappings, total_count = await get_user_mappings(
         callback.from_user.id, offset=offset, limit=page_size
     )
 
     if not mappings and page == 1:
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -312,8 +302,6 @@ async def process_view_my_mappings(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("cab:revoke:"))
 async def process_revoke_my_mapping(callback: types.CallbackQuery):
     """Revokes single mapping created by operator without breaking shared dictionary."""
-    from storage import revoke_user_mapping
-
     parts = callback.data.split(":")
     audit_id = int(parts[2])
     current_page = int(parts[3]) if len(parts) > 3 else 1
@@ -356,8 +344,6 @@ async def process_view_my_stores(callback: types.CallbackQuery):
         or not user.get("iiko_login")
         or not user.get("iiko_password_encrypted")
     ):
-        from keyboards.invoices_kb import get_setup_creds_kb
-
         await callback.message.edit_text(
             t("invoice_no_creds_error"),
             reply_markup=get_setup_creds_kb("setup"),
@@ -385,9 +371,6 @@ async def process_view_my_stores(callback: types.CallbackQuery):
             "В iikoChain не найдено складов или нет прав доступа.", show_alert=True
         )
         return
-
-    from storage import get_user_stores
-    from keyboards.menu_kb import get_user_stores_toggle_kb
 
     user_stores = await get_user_stores(callback.from_user.id)
     connected_ids = {s["store_id"] for s in user_stores}
@@ -423,8 +406,6 @@ async def process_toggle_store(callback: types.CallbackQuery):
     )
     target_store = next((s for s in stores if s["id"] == store_id), None)
     target_name = target_store["name"] if target_store else "Склад iiko"
-
-    from storage import toggle_user_store
 
     is_connected = await toggle_user_store(callback.from_user.id, store_id, target_name)
 

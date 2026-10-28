@@ -1,10 +1,9 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart, Command, CommandObject
 from loguru import logger
-from storage import validate_and_consume_invite, get_bot_user
+from storage import validate_and_consume_invite, get_bot_user, is_admin_user
 from lexicon import t
 from keyboards.menu_kb import get_main_menu_kb
-from config import get_admin_ids
 
 router = Router(name="commands_router")
 
@@ -15,8 +14,6 @@ async def handle_start(message: types.Message, command: CommandObject):
     user = message.from_user
     if not user:
         return
-
-    from storage import is_admin_user
 
     is_admin = await is_admin_user(user.id)
 
@@ -62,8 +59,6 @@ async def handle_start(message: types.Message, command: CommandObject):
 async def handle_menu_command(message: types.Message):
     """Displays main interactive menu via command."""
     user = message.from_user
-    from storage import is_admin_user
-
     is_admin = await is_admin_user(user.id) if user else False
     await message.answer(
         t("menu_main_title"),

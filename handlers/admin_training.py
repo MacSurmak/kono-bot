@@ -121,8 +121,6 @@ async def process_start_training_session(
     callback: types.CallbackQuery, state: FSMContext
 ):
     """Activates training batch accumulator session for admin."""
-    from storage import is_admin_user
-
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
@@ -157,8 +155,6 @@ async def process_start_training_session(
 @router.message(AdminTrainingState.accumulating_files, F.document)
 async def process_accumulate_document(message: types.Message, state: FSMContext):
     """Silently stages and unpacks batch documents without chat spam or UI locking."""
-    from storage import is_admin_user
-
     if not await is_admin_user(message.from_user.id):
         return
 
@@ -214,9 +210,6 @@ async def process_execute_training_simulation(
     callback: types.CallbackQuery, state: FSMContext
 ):
     """Executes dry-run matching simulation against iikoChain under admin credentials."""
-    from storage import is_admin_user, get_bot_user
-    from services.crypto import decrypt_secret
-
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
@@ -290,7 +283,6 @@ async def process_execute_training_simulation(
     except Exception as e:
         logger.exception(f"Batch training simulation failed for {batch_id}: {e}")
         _cleanup_scratch(batch_id)
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -311,8 +303,6 @@ async def process_execute_training_simulation(
 @router.callback_query(F.data.startswith("admin:train_commit:"))
 async def process_commit_training_results(callback: types.CallbackQuery):
     """Atomically commits candidate mappings into PostgreSQL knowledge base."""
-    from storage import is_admin_user
-
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
         return
@@ -332,8 +322,6 @@ async def process_commit_training_results(callback: types.CallbackQuery):
             candidates, admin_id=callback.from_user.id
         )
         _cleanup_scratch(batch_id)
-
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -360,8 +348,6 @@ async def process_commit_training_results(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("admin:train_report:"))
 async def process_download_training_report(callback: types.CallbackQuery):
     """Sends detailed telemetry simulation report as downloadable JSON file."""
-    from storage import is_admin_user
-
     if not await is_admin_user(callback.from_user.id):
         return
 
@@ -388,16 +374,12 @@ async def process_download_training_report(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("admin:train_cancel:"))
 async def process_cancel_training(callback: types.CallbackQuery, state: FSMContext):
     """Aborts training batch session and wipes all temporary files without touching database."""
-    from storage import is_admin_user
-
     if not await is_admin_user(callback.from_user.id):
         return
 
     batch_id = callback.data.split(":")[2]
     await state.clear()
     _cleanup_scratch(batch_id)
-
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
