@@ -10,7 +10,9 @@ def parse_diadoc_xml(file_path: str) -> RawInvoiceDocument:
     if doc_elem is None:
         doc_elem = root.find(".//Документ")
     if doc_elem is None:
-        raise ValueError("Invalid Diadoc XML: neither 'СвСчФакт' nor 'Документ' root element found")
+        raise ValueError(
+            "Invalid Diadoc XML: neither 'СвСчФакт' nor 'Документ' root element found"
+        )
 
     doc_num = doc_elem.attrib.get("НомерДок", "").strip()
     if not doc_num:
@@ -43,7 +45,9 @@ def parse_diadoc_xml(file_path: str) -> RawInvoiceDocument:
         ]
         seller_name = f"ИП {' '.join(fio_parts)}".strip()
     else:
-        raise ValueError("Invalid Diadoc XML: missing seller details ('СвЮЛУч' or 'СвИП')")
+        raise ValueError(
+            "Invalid Diadoc XML: missing seller details ('СвЮЛУч' or 'СвИП')"
+        )
 
     if not inn:
         raise ValueError("Invalid Diadoc XML: seller INN is missing or empty")
@@ -70,7 +74,9 @@ def parse_diadoc_xml(file_path: str) -> RawInvoiceDocument:
 
         raw_vat = row.attrib.get("НалСт", "").strip().lower()
         if not raw_vat:
-            raise ValueError(f"Line #{row.attrib.get('НомСтр', '?')} missing required VAT attribute 'НалСт'")
+            raise ValueError(
+                f"Line #{row.attrib.get('НомСтр', '?')} missing required VAT attribute 'НалСт'"
+            )
 
         if "без" in raw_vat:
             vat_val = 0.0
@@ -96,7 +102,9 @@ def parse_diadoc_xml(file_path: str) -> RawInvoiceDocument:
 
         sum_str = row.attrib.get("СтТовУчНал")
         if sum_str is None or not sum_str.strip():
-            raise ValueError(f"Line #{line_num_str} missing required sum with VAT 'СтТовУчНал'")
+            raise ValueError(
+                f"Line #{line_num_str} missing required sum with VAT 'СтТовУчНал'"
+            )
 
         items.append(
             RawInvoiceItem(

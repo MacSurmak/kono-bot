@@ -8,7 +8,9 @@ from config import cfg
 
 REDIS_URL = os.getenv("REDIS_URL")
 if not REDIS_URL or not REDIS_URL.strip():
-    raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set.")
+    raise RuntimeError(
+        "CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set."
+    )
 
 
 class GeminiRotator:
@@ -23,7 +25,9 @@ class GeminiRotator:
             self._redis = redis.Redis.from_url(REDIS_URL.strip(), decode_responses=True)
             self._redis.ping()
         except Exception as e:
-            raise ConnectionError(f"Failed to connect to Redis for Gemini rotator: {e}") from e
+            raise ConnectionError(
+                f"Failed to connect to Redis for Gemini rotator: {e}"
+            ) from e
 
     def _get_key_usage(self, key_name: str) -> int:
         try:
@@ -32,7 +36,9 @@ class GeminiRotator:
                 return int(val)
             return 0
         except Exception as e:
-            logger.warning(f"Failed to read usage stats for key '{key_name}' from Redis: {e}")
+            logger.warning(
+                f"Failed to read usage stats for key '{key_name}' from Redis: {e}"
+            )
             return 0
 
     def _record_key_stat(
@@ -43,7 +49,9 @@ class GeminiRotator:
             if is_rate_limit:
                 self._redis.incr(f"gemini:key:{key_name}:rate_limits")
         except Exception as e:
-            logger.warning(f"Failed to record telemetry for key '{key_name}' in Redis: {e}")
+            logger.warning(
+                f"Failed to record telemetry for key '{key_name}' in Redis: {e}"
+            )
 
     def _get_sorted_keys(self, exclude_names: Set[str]) -> List[Dict[str, str]]:
         """Sorts available keys in ascending order of invocation counts (least used first)."""

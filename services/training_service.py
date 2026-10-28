@@ -175,7 +175,9 @@ async def simulate_batch_training(
         for it in items:
             raw_sum = it.findtext("sum")
             if raw_sum is None or not raw_sum.strip():
-                raise BatchTrainingError(f"iiko invoice #{inc_num} contains item missing required 'sum' element.")
+                raise BatchTrainingError(
+                    f"iiko invoice #{inc_num} contains item missing required 'sum' element."
+                )
             item_sums.append(float(raw_sum))
         doc_sum = round(sum(item_sums), 2)
         if s_id and inc_num:
@@ -228,11 +230,15 @@ async def simulate_batch_training(
 
             raw_amount = it.findtext("amount")
             if raw_amount is None or not raw_amount.strip():
-                raise BatchTrainingError(f"iiko invoice #{iiko_num} item missing required 'amount' element.")
+                raise BatchTrainingError(
+                    f"iiko invoice #{iiko_num} item missing required 'amount' element."
+                )
 
             raw_sum = it.findtext("sum")
             if raw_sum is None or not raw_sum.strip():
-                raise BatchTrainingError(f"iiko invoice #{iiko_num} item missing required 'sum' element.")
+                raise BatchTrainingError(
+                    f"iiko invoice #{iiko_num} item missing required 'sum' element."
+                )
 
             iiko_items.append(
                 {

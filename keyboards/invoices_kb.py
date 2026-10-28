@@ -9,7 +9,9 @@ def get_supplier_disambiguation_kb(
     """Generates supplier disambiguation choices for identical INNs."""
     rows = []
     for c in candidates:
-        dep = t("btn_dept_code_fmt", dept=c["dept_codes"]) if c.get("dept_codes") else ""
+        dep = (
+            t("btn_dept_code_fmt", dept=c["dept_codes"]) if c.get("dept_codes") else ""
+        )
         text = f"{c['name'][:30]}{dep}"
         rows.append(
             [
@@ -97,9 +99,7 @@ def get_items_review_kb(
         r_name = it["raw_name"][:16]
         i_name = it["iiko_name"][:16]
         coeff = float(it.get("coefficient", 1.0))
-        c_str = (
-            t("btn_coeff_suffix_fmt", coeff=f"{coeff:g}") if coeff != 1.0 else ""
-        )
+        c_str = t("btn_coeff_suffix_fmt", coeff=f"{coeff:g}") if coeff != 1.0 else ""
         btn_text = t(
             "btn_item_review_line",
             num=num,

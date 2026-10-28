@@ -10,7 +10,9 @@ from config import cfg
 BASE_URL = cfg["iiko"]["base_url"].rstrip("/")
 REDIS_URL = os.getenv("REDIS_URL")
 if not REDIS_URL or not REDIS_URL.strip():
-    raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set.")
+    raise RuntimeError(
+        "CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set."
+    )
 TOKEN_CACHE_TTL = 900  # 15 minutes
 
 
@@ -93,7 +95,9 @@ class IikoClient:
             try:
                 self.redis_client.delete(cache_key)
             except Exception as e:
-                logger.warning(f"Failed to invalidate token for '{login}' from Redis: {e}")
+                logger.warning(
+                    f"Failed to invalidate token for '{login}' from Redis: {e}"
+                )
 
     def _request_with_user_auth(
         self,

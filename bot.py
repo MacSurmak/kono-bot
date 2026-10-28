@@ -49,7 +49,9 @@ async def run_garbage_collector():
                                 os.remove(os.path.join(TMP_DIR, fname))
                                 cleaned_files += 1
                             except OSError as err:
-                                logger.warning(f"[GC] Failed to remove orphaned temporary file '{fname}': {err}")
+                                logger.warning(
+                                    f"[GC] Failed to remove orphaned temporary file '{fname}': {err}"
+                                )
                 logger.info(
                     f"[GC] Purged {len(stale_doc_ids)} stale session(s) and {cleaned_files} temporary file(s)."
                 )
@@ -73,7 +75,9 @@ async def main():
                 if os.path.isfile(f_path):
                     os.remove(f_path)
             except OSError as err:
-                logger.warning(f"Could not purge temporary file '{f}' during startup sanitization: {err}")
+                logger.warning(
+                    f"Could not purge temporary file '{f}' during startup sanitization: {err}"
+                )
     os.makedirs(TMP_DIR, exist_ok=True)
     logger.info("Temporary workspace sanitized successfully.")
 
@@ -82,7 +86,9 @@ async def main():
 
     redis_url = os.getenv("REDIS_URL")
     if not redis_url or not redis_url.strip():
-        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set.")
+        raise RuntimeError(
+            "CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set."
+        )
 
     storage = RedisStorage.from_url(redis_url.strip())
     dp = Dispatcher(storage=storage)

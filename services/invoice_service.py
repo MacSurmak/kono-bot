@@ -24,7 +24,9 @@ def build_iiko_xml(
     for it in matched_items:
         coeff = float(it["coefficient"])
         if coeff <= 0:
-            raise ValueError(f"Invalid packaging coefficient {coeff} for item #{it['num']}")
+            raise ValueError(
+                f"Invalid packaging coefficient {coeff} for item #{it['num']}"
+            )
 
         final_amount = round(it["amount"] * coeff, 4)
         if final_amount <= 0:

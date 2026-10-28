@@ -264,7 +264,9 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
     user_stores = await get_user_stores(callback.from_user.id)
     chosen = next((s for s in user_stores if s["store_id"] == store_id), None)
     if not chosen:
-        raise ValueError(f"Selected store ID '{store_id}' is not connected to operator's account.")
+        raise ValueError(
+            f"Selected store ID '{store_id}' is not connected to operator's account."
+        )
     store_name = chosen["name"]
 
     await callback.message.edit_text(
@@ -503,9 +505,7 @@ async def prompt_next_unresolved_item(
     total = len(session["parsed_doc"].get("items", []))
 
     article_val = item.get("article", "")
-    article_info = (
-        t("invoice_article_info", article=article_val) if article_val else ""
-    )
+    article_info = t("invoice_article_info", article=article_val) if article_val else ""
     card_text = t(
         "invoice_unmatched_item_card",
         current=current["item_idx"],
@@ -925,7 +925,10 @@ async def process_review_items_click(callback: types.CallbackQuery):
     await callback.message.edit_text(
         t("invoice_review_title", doc_number=doc_num),
         reply_markup=get_items_review_kb(
-            doc_id, session["matched_items"], page=page, page_size=PAGE_SIZE_REVIEW_ITEMS
+            doc_id,
+            session["matched_items"],
+            page=page,
+            page_size=PAGE_SIZE_REVIEW_ITEMS,
         ),
         parse_mode="HTML",
     )
@@ -944,7 +947,10 @@ async def process_review_page_change(callback: types.CallbackQuery):
 
     await callback.message.edit_reply_markup(
         reply_markup=get_items_review_kb(
-            doc_id, session["matched_items"], page=page, page_size=PAGE_SIZE_REVIEW_ITEMS
+            doc_id,
+            session["matched_items"],
+            page=page,
+            page_size=PAGE_SIZE_REVIEW_ITEMS,
         )
     )
 
@@ -1097,7 +1103,9 @@ async def process_draft_upload(callback: types.CallbackQuery):
             root = ET.fromstring(resp.content)
             raw_doc_num = root.findtext("documentNumber")
             if not raw_doc_num or not raw_doc_num.strip():
-                raise IikoApiError(f"iiko draft creation succeeded but returned empty documentNumber: {resp.text[:300]}")
+                raise IikoApiError(
+                    f"iiko draft creation succeeded but returned empty documentNumber: {resp.text[:300]}"
+                )
             iiko_doc_num = raw_doc_num.strip()
             logger.info(
                 f"Draft invoice created in iiko by {login}: #{iiko_doc_num} (incoming: #{raw_doc.doc_number}) for store '{session['store_name']}'"

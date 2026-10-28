@@ -95,7 +95,9 @@ async def _debounced_accumulator_update(
             except TelegramBadRequest:
                 pass
             except Exception as err:
-                logger.warning(f"Failed to delete outdated status message {old_msg_id}: {err}")
+                logger.warning(
+                    f"Failed to delete outdated status message {old_msg_id}: {err}"
+                )
 
         card_text = t(
             "admin_train_accumulator_title",
@@ -348,9 +350,7 @@ async def process_commit_training_results(callback: types.CallbackQuery):
         )
     except Exception as e:
         logger.exception(f"Failed to commit training batch {batch_id}: {e}")
-        await callback.message.edit_text(
-            t("admin_train_commit_error", error=str(e))
-        )
+        await callback.message.edit_text(t("admin_train_commit_error", error=str(e)))
         _cleanup_scratch(batch_id)
 
 

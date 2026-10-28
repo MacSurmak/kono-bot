@@ -79,7 +79,9 @@ def get_admin_ids() -> set[int]:
         admin_ids.add(int(tg["admin_id"]))
 
     if not admin_ids:
-        raise ConfigurationError("At least one valid integer admin Telegram ID must be configured in 'telegram.admin_ids'")
+        raise ConfigurationError(
+            "At least one valid integer admin Telegram ID must be configured in 'telegram.admin_ids'"
+        )
     return admin_ids
 
 

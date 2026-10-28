@@ -33,6 +33,7 @@ def _get_encryption_key() -> bytes:
 # an authentication failure into a silent corruption bug.
 # ==============================================================================
 
+
 def encrypt_secret(plaintext: str) -> bytes:
     """Encrypts plaintext string using Fernet authenticated symmetric cipher."""
     if not plaintext or not plaintext.strip():

@@ -24,24 +24,34 @@ async def init_db() -> asyncpg.Pool:
 
     host = os.getenv("POSTGRES_HOST")
     if not host or not host.strip():
-        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_HOST' environment variable is not set.")
+        raise RuntimeError(
+            "CRITICAL CONFIGURATION ERROR: 'POSTGRES_HOST' environment variable is not set."
+        )
 
     port_str = os.getenv("POSTGRES_PORT")
     if not port_str or not port_str.strip():
-        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_PORT' environment variable is not set.")
+        raise RuntimeError(
+            "CRITICAL CONFIGURATION ERROR: 'POSTGRES_PORT' environment variable is not set."
+        )
     port = int(port_str)
 
     db = os.getenv("POSTGRES_DB")
     if not db or not db.strip():
-        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_DB' environment variable is not set.")
+        raise RuntimeError(
+            "CRITICAL CONFIGURATION ERROR: 'POSTGRES_DB' environment variable is not set."
+        )
 
     user = os.getenv("POSTGRES_USER")
     if not user or not user.strip():
-        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_USER' environment variable is not set.")
+        raise RuntimeError(
+            "CRITICAL CONFIGURATION ERROR: 'POSTGRES_USER' environment variable is not set."
+        )
 
     password = os.getenv("POSTGRES_PASSWORD")
     if not password or not password.strip():
-        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_PASSWORD' environment variable is not set.")
+        raise RuntimeError(
+            "CRITICAL CONFIGURATION ERROR: 'POSTGRES_PASSWORD' environment variable is not set."
+        )
 
     logger.info(f"Connecting to PostgreSQL at {host}:{port}/{db}...")
     _POOL = await asyncpg.create_pool(
@@ -417,6 +427,7 @@ async def toggle_user_store(user_id: int, store_id: str, store_name: str) -> boo
 # - Falling back to hardcoded default roles or database connection credentials.
 # ==============================================================================
 
+
 async def record_mapping_vote(
     supplier_id: str,
     raw_name: str,
@@ -430,7 +441,9 @@ async def record_mapping_vote(
 ) -> None:
     clean_name = normalize_item_name(raw_name)
     if package_coefficient is None or float(package_coefficient) <= 0:
-        raise ValueError(f"Invalid package_coefficient '{package_coefficient}': must be a strictly positive float.")
+        raise ValueError(
+            f"Invalid package_coefficient '{package_coefficient}': must be a strictly positive float."
+        )
     safe_coeff = float(package_coefficient)
 
     pool = get_db_pool()
@@ -495,8 +508,13 @@ async def get_consensus_mapping(
     total_votes = sum(r["usage_count"] for r in rows)
     winner = rows[0]
     confidence = winner["usage_count"] / total_votes
-    if winner["package_coefficient"] is None or float(winner["package_coefficient"]) <= 0:
-        raise ValueError(f"Database corruption: mapping id={winner['id']} has non-positive package_coefficient.")
+    if (
+        winner["package_coefficient"] is None
+        or float(winner["package_coefficient"]) <= 0
+    ):
+        raise ValueError(
+            f"Database corruption: mapping id={winner['id']} has non-positive package_coefficient."
+        )
     coeff = float(winner["package_coefficient"])
 
     return {

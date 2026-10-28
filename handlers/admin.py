@@ -264,7 +264,9 @@ async def handle_search_mapping_input(message: types.Message, state: FSMContext)
     )
 
     if not results:
-        await message.answer(t("admin_search_mapping_empty", query=query), parse_mode="HTML")
+        await message.answer(
+            t("admin_search_mapping_empty", query=query), parse_mode="HTML"
+        )
         return
 
     await state.clear()

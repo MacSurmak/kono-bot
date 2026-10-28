@@ -192,7 +192,9 @@ async def process_password_input(message: types.Message, state: FSMContext):
         except TelegramBadRequest:
             pass
         except Exception as err:
-            logger.warning(f"Could not delete password prompt message {prompt_id}: {err}")
+            logger.warning(
+                f"Could not delete password prompt message {prompt_id}: {err}"
+            )
 
     if not login or not password:
         await message.answer(t("cab_creds_empty"))
@@ -370,13 +372,13 @@ async def process_view_my_stores(callback: types.CallbackQuery):
             client.get_iiko_departments_for_user, login, password
         )
     except Exception as e:
-        await callback.answer(t("cab_iiko_conn_error", error=str(e)[:100]), show_alert=True)
+        await callback.answer(
+            t("cab_iiko_conn_error", error=str(e)[:100]), show_alert=True
+        )
         return
 
     if not stores:
-        await callback.answer(
-            t("cab_no_stores_found"), show_alert=True
-        )
+        await callback.answer(t("cab_no_stores_found"), show_alert=True)
         return
 
     user_stores = await get_user_stores(callback.from_user.id)
