@@ -128,14 +128,15 @@ async def simulate_batch_training(
         )
 
     # Determine date boundaries with 5-day buffer
-    if valid_dates:
-        min_doc_date = min(valid_dates)
-        max_doc_date = max(valid_dates)
-        date_from = (min_doc_date - timedelta(days=5)).strftime("%Y-%m-%d")
-        date_to = (max_doc_date + timedelta(days=5)).strftime("%Y-%m-%d")
-    else:
-        date_from = "2026-01-01"
-        date_to = "2026-12-31"
+    if not valid_dates:
+        raise BatchTrainingError(
+            "Не удалось извлечь ни одной валидной даты из документов пакета. Обучение невозможно."
+        )
+
+    min_doc_date = min(valid_dates)
+    max_doc_date = max(valid_dates)
+    date_from = (min_doc_date - timedelta(days=5)).strftime("%Y-%m-%d")
+    date_to = (max_doc_date + timedelta(days=5)).strftime("%Y-%m-%d")
 
     # Fetch active catalog and historical invoices from iiko under admin credentials
     active_products = await asyncio.to_thread(

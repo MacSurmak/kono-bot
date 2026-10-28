@@ -14,7 +14,7 @@ class InvoiceItemSchema(BaseModel):
     price: float = Field(description="Unit price")
     sum: float = Field(description="Line total amount with VAT")
     vat_rate: float = Field(
-        default=20.0, description="VAT percentage, e.g. 20.0 or 10.0"
+        description="Exact VAT percentage from invoice, e.g. 20.0, 10.0, or 0.0"
     )
 
 

@@ -19,11 +19,26 @@ async def init_db() -> asyncpg.Pool:
     """Initializes PostgreSQL connection pool and executes idempotent DDL migrations."""
     global _POOL
 
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = int(os.getenv("POSTGRES_PORT", "5432"))
-    db = os.getenv("POSTGRES_DB", "kono_supply")
-    user = os.getenv("POSTGRES_USER", "kono_admin")
-    password = os.getenv("POSTGRES_PASSWORD", "kono_secure_password")
+    host = os.getenv("POSTGRES_HOST")
+    if not host or not host.strip():
+        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_HOST' environment variable is not set.")
+
+    port_str = os.getenv("POSTGRES_PORT")
+    if not port_str or not port_str.strip():
+        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_PORT' environment variable is not set.")
+    port = int(port_str)
+
+    db = os.getenv("POSTGRES_DB")
+    if not db or not db.strip():
+        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_DB' environment variable is not set.")
+
+    user = os.getenv("POSTGRES_USER")
+    if not user or not user.strip():
+        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_USER' environment variable is not set.")
+
+    password = os.getenv("POSTGRES_PASSWORD")
+    if not password or not password.strip():
+        raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'POSTGRES_PASSWORD' environment variable is not set.")
 
     logger.info(f"Connecting to PostgreSQL at {host}:{port}/{db}...")
     _POOL = await asyncpg.create_pool(

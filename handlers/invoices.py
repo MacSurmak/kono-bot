@@ -247,7 +247,9 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
 
     user_stores = await get_user_stores(callback.from_user.id)
     chosen = next((s for s in user_stores if s["store_id"] == store_id), None)
-    store_name = chosen["name"] if chosen else "Склад"
+    if not chosen:
+        raise ValueError(f"Selected store ID '{store_id}' is not connected to operator's account.")
+    store_name = chosen["name"]
 
     await callback.message.edit_text(
         f"📍 Ресторан: <b>{store_name}</b>\n"
@@ -999,15 +1001,9 @@ async def process_edit_matched_item(callback: types.CallbackQuery):
         )
 
         if not original_raw_item:
-            original_raw_item = {
-                "line_num": item_num,
-                "raw_name": reverted_matched["raw_name"],
-                "article": "",
-                "quantity": reverted_matched["amount"],
-                "price": reverted_matched["price"],
-                "sum": reverted_matched["sum"],
-                "vat_rate": reverted_matched.get("vat", 20.0),
-            }
+            raise KeyError(
+                f"Original raw item for line #{item_num} not found in parsed document."
+            )
 
         from storage import get_bot_user
         from services.crypto import decrypt_secret

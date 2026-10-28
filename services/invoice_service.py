@@ -9,11 +9,16 @@ def build_iiko_xml(
 
     item_blocks = []
     for it in matched_items:
-        coeff = float(it.get("coefficient", 1.0) or 1.0)
+        coeff = float(it["coefficient"])
+        if coeff <= 0:
+            raise ValueError(f"Invalid packaging coefficient {coeff} for item #{it['num']}")
+
         final_amount = round(it["amount"] * coeff, 4)
-        final_price = (
-            round(it["sum"] / final_amount, 4) if final_amount > 0 else it["price"]
-        )
+        if final_amount <= 0:
+            raise ValueError(
+                f"Calculated amount for item #{it['num']} must be positive, got {final_amount}"
+            )
+        final_price = round(it["sum"] / final_amount, 4)
 
         item_blocks.append(f"""
         <item>

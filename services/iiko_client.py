@@ -8,7 +8,9 @@ from loguru import logger
 from config import cfg
 
 BASE_URL = cfg["iiko"]["base_url"].rstrip("/")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL")
+if not REDIS_URL or not REDIS_URL.strip():
+    raise RuntimeError("CRITICAL CONFIGURATION ERROR: 'REDIS_URL' environment variable is not set.")
 TOKEN_CACHE_TTL = 900  # 15 minutes
 
 
@@ -25,13 +27,11 @@ class IikoClient:
         self._init_redis()
 
     def _init_redis(self):
-        try:
-            import redis
+        import redis
 
-            self.redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
-        except Exception as e:
-            logger.warning(f"Redis cache unavailable for iiko client: {e}")
-            self.redis_client = None
+        self.redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+        # Fail-Fast: verify Redis connection immediately
+        self.redis_client.ping()
 
     def _authenticate_direct(self, login: str, password: str) -> str:
         """Performs raw /api/auth authentication against iiko server."""
