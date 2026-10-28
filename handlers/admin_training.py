@@ -224,7 +224,7 @@ async def process_execute_training_simulation(
         or not admin.get("iiko_password_encrypted")
     ):
         await callback.answer(
-            "Для запуска обучения привяжите свой логин и пароль iiko в кабинете!",
+            t("admin_train_no_creds_alert"),
             show_alert=True,
         )
         return
@@ -254,12 +254,15 @@ async def process_execute_training_simulation(
 
         conflict_details = ""
         if report["conflicts_count"] > 0:
-            conflict_details = "\n⚠️ <b>Примеры конфликтов:</b>\n"
+            conflict_details = t("admin_train_conflict_header")
             for ex in report["conflict_examples"]:
-                conflict_details += (
-                    f"• <b>{ex['raw_name'][:25]}</b>:\n"
-                    f"  База: <i>{ex['current_name'][:25]}</i> (x{ex['current_votes']})\n"
-                    f"  Пакет: <b>{ex['new_name'][:25]}</b> (x{ex['new_votes']})\n"
+                conflict_details += t(
+                    "admin_train_conflict_item",
+                    raw_name=ex["raw_name"][:25],
+                    current_name=ex["current_name"][:25],
+                    current_votes=ex["current_votes"],
+                    new_name=ex["new_name"][:25],
+                    new_votes=ex["new_votes"],
                 )
 
         matched_count = report["matched_strict"] + report["matched_unique_sums"]
@@ -297,7 +300,7 @@ async def process_execute_training_simulation(
             ]
         )
         await callback.message.edit_text(
-            f"❌ <b>Ошибка при анализе пакета:</b>\n<code>{e}</code>",
+            t("admin_train_simulation_error", error=str(e)),
             reply_markup=kb,
             parse_mode="HTML",
         )
@@ -343,7 +346,7 @@ async def process_commit_training_results(callback: types.CallbackQuery):
     except Exception as e:
         logger.exception(f"Failed to commit training batch {batch_id}: {e}")
         await callback.message.edit_text(
-            f"❌ <b>Ошибка фиксации в базе:</b>\n<code>{e}</code>"
+            t("admin_train_commit_error", error=str(e))
         )
         _cleanup_scratch(batch_id)
 
@@ -370,7 +373,7 @@ async def process_download_training_report(callback: types.CallbackQuery):
 
     await callback.message.answer_document(
         document=doc_file,
-        caption=f"📄 Полная детализация симуляции обучения (Сессия #{batch_id})",
+        caption=t("admin_train_report_caption", batch_id=batch_id),
     )
 
 

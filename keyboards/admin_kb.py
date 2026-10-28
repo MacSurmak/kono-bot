@@ -12,8 +12,8 @@ def get_admin_users_list_kb(
     for u in users:
         t_id = u["telegram_id"]
         name = u["full_name"][:20]
-        badge = "👑 " if u["role"] == "admin" else "👤 "
-        status = "" if u["is_active"] else " [БЛОК]"
+        badge = t("badge_admin") if u["role"] == "admin" else t("badge_operator")
+        status = "" if u["is_active"] else t("badge_blocked")
         rows.append(
             [
                 InlineKeyboardButton(
@@ -197,7 +197,11 @@ def get_admin_mappings_kb(
     """Constructs paginated list of search results with deletion actions."""
     rows = []
     for r in results:
-        btn_text = f"🗑 Удалить: {r['raw_name'][:20]} -> {r['iiko_name'][:18]}"
+        btn_text = t(
+            "admin_btn_del_mapping",
+            raw_name=r["raw_name"][:20],
+            iiko_name=r["iiko_name"][:18],
+        )
         rows.append(
             [
                 InlineKeyboardButton(

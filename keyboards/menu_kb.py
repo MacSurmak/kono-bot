@@ -94,7 +94,7 @@ def get_user_stores_toggle_kb(
         s_id = s["id"]
         s_name = s["name"]
         is_conn = s_id in connected_store_ids
-        prefix = "✅ " if is_conn else "⬜ "
+        prefix = t("checkbox_checked") if is_conn else t("checkbox_unchecked")
         rows.append(
             [
                 InlineKeyboardButton(
@@ -161,7 +161,7 @@ def get_user_mappings_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"↩️ {raw} -> {iiko}",
+                    text=t("btn_revoke_mapping_item", raw=raw, iiko=iiko),
                     callback_data=f"cab:revoke:{m_id}:{page}",
                 )
             ]

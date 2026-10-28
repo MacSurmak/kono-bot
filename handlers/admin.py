@@ -124,12 +124,12 @@ async def process_view_user_card(callback: types.CallbackQuery):
     stores_str = (
         ", ".join(s["name"] for s in user_stores)
         if user_stores
-        else "Нет подключенных точек"
+        else t("user_no_stores")
     )
 
-    role_str = "👑 Администратор" if target_user["role"] == "admin" else "👤 Оператор"
-    status_str = "🟢 Активен" if target_user["is_active"] else "🔴 Заблокирован"
-    login_str = target_user.get("iiko_login") or "Не настроен"
+    role_str = t("role_admin") if target_user["role"] == "admin" else t("role_operator")
+    status_str = t("status_active") if target_user["is_active"] else t("status_blocked")
+    login_str = target_user.get("iiko_login") or t("user_no_iiko_login")
 
     text = t(
         "admin_user_card_title",
@@ -137,7 +137,7 @@ async def process_view_user_card(callback: types.CallbackQuery):
         username=(
             f"@{target_user['username']}"
             if target_user.get("username")
-            else "Без юзернейма"
+            else t("user_no_username")
         ),
         telegram_id=target_user["telegram_id"],
         role_str=role_str,

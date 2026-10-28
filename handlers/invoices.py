@@ -186,7 +186,7 @@ async def handle_document_upload(message: types.Message):
     if len(user_stores) == 1:
         chosen_store = user_stores[0]
         status_msg = await message.answer(
-            f"📍 Ресторан: <b>{chosen_store['name']}</b> (автовыбор)\n"
+            t("invoice_store_autoselected", store=chosen_store["name"])
             + t("invoice_parsing_wait", filename=filename),
             parse_mode="HTML",
         )
@@ -254,7 +254,7 @@ async def process_initial_store_choice(callback: types.CallbackQuery):
     store_name = chosen["name"]
 
     await callback.message.edit_text(
-        f"📍 Ресторан: <b>{store_name}</b>\n"
+        t("invoice_store_selected", store=store_name)
         + t("invoice_parsing_wait", filename=session.get("filename", "документ")),
         parse_mode="HTML",
     )
@@ -278,7 +278,7 @@ async def execute_parse_and_alignment(
     try:
         parsed_doc = await asyncio.to_thread(parse_document, temp_path)
         if not parsed_doc or not parsed_doc.items:
-            raise ValueError("Документ не содержит товарных позиций или поврежден.")
+            raise ValueError(t("invoice_empty_items_error"))
 
         total_sum = sum(it.sum for it in parsed_doc.items)
         session["store_id"] = store_id
@@ -340,7 +340,7 @@ async def execute_parse_and_alignment(
                     await message.edit_text(
                         t(
                             "invoice_supplier_not_found_fuzzy",
-                            inn=supplier_inn or "Не указан",
+                            inn=supplier_inn or t("invoice_inn_not_specified"),
                             raw_name=raw_supp_name,
                         ),
                         reply_markup=get_fuzzy_supplier_kb(doc_id, fuzzy_candidates),
@@ -351,7 +351,7 @@ async def execute_parse_and_alignment(
                         t(
                             "invoice_supplier_none_matched",
                             raw_name=raw_supp_name,
-                            inn=supplier_inn or "Не указан",
+                            inn=supplier_inn or t("invoice_inn_not_specified"),
                         )
                     )
                     await cleanup_session_data(doc_id)
@@ -487,7 +487,7 @@ async def prompt_next_unresolved_item(
 
     article_val = item.get("article", "")
     article_info = (
-        f"\nАртикул поставщика: <code>{article_val}</code>" if article_val else ""
+        t("invoice_article_info", article=article_val) if article_val else ""
     )
     card_text = t(
         "invoice_unmatched_item_card",
@@ -809,7 +809,9 @@ async def apply_confirmed_item_match(
             f"Item alignment confirmed: '{item['raw_name']}' -> '{prod['name']}' (coeff={coeff})"
         )
 
-        pack_info = f", фасовка x{coeff:g}" if coeff != 1.0 else ""
+        pack_info = (
+            t("invoice_pack_coeff_fmt", coeff=f"{coeff:g}") if coeff != 1.0 else ""
+        )
         success_text = t(
             "invoice_sku_matched_success",
             prod_name=prod["name"],

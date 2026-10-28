@@ -9,7 +9,7 @@ def get_supplier_disambiguation_kb(
     """Generates supplier disambiguation choices for identical INNs."""
     rows = []
     for c in candidates:
-        dep = f" (цех {c['dept_codes']})" if c.get("dept_codes") else ""
+        dep = t("btn_dept_code_fmt", dept=c["dept_codes"]) if c.get("dept_codes") else ""
         text = f"{c['name'][:30]}{dep}"
         rows.append(
             [
@@ -35,7 +35,7 @@ def get_fuzzy_supplier_kb(
     rows = []
     for c in candidates:
         name = c["name"][:32]
-        score = f"{c['score']:.0f}%"
+        score = t("btn_score_fmt", score=f"{c['score']:.0f}")
         rows.append(
             [
                 InlineKeyboardButton(
@@ -97,8 +97,16 @@ def get_items_review_kb(
         r_name = it["raw_name"][:16]
         i_name = it["iiko_name"][:16]
         coeff = float(it.get("coefficient", 1.0))
-        c_str = f" x{coeff:g}" if coeff != 1.0 else ""
-        btn_text = f"✏️ #{num}: {r_name} -> {i_name}{c_str}"
+        c_str = (
+            t("btn_coeff_suffix_fmt", coeff=f"{coeff:g}") if coeff != 1.0 else ""
+        )
+        btn_text = t(
+            "btn_item_review_line",
+            num=num,
+            raw_name=r_name,
+            iiko_name=i_name,
+            coeff_str=c_str,
+        )
         rows.append(
             [
                 InlineKeyboardButton(
@@ -161,7 +169,7 @@ def get_invoice_store_choice_kb(
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"🏢 {s['name'][:28]}",
+                    text=t("btn_store_choice_item", name=s["name"][:28]),
                     callback_data=f"inv:init_store:{doc_id}:{s['store_id']}",
                 )
             ]
@@ -246,29 +254,29 @@ def get_packaging_coeff_kb(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="x1 (1 к 1)",
+                    text=t("btn_coeff_preset_1"),
                     callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:1",
                 ),
                 InlineKeyboardButton(
-                    text="x10",
+                    text=t("btn_coeff_preset_10"),
                     callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:10",
                 ),
                 InlineKeyboardButton(
-                    text="x20",
+                    text=t("btn_coeff_preset_20"),
                     callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:20",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="x50",
+                    text=t("btn_coeff_preset_50"),
                     callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:50",
                 ),
                 InlineKeyboardButton(
-                    text="x100",
+                    text=t("btn_coeff_preset_100"),
                     callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:100",
                 ),
                 InlineKeyboardButton(
-                    text="x500",
+                    text=t("btn_coeff_preset_500"),
                     callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:500",
                 ),
             ],

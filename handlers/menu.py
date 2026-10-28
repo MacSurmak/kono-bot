@@ -90,25 +90,25 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
 
     has_creds = bool(user.get("iiko_login") and user.get("iiko_password_encrypted"))
     creds_status = (
-        f"<code>{user['iiko_login']}</code> (✅ привязан)"
+        t("cab_creds_bound", login=user["iiko_login"])
         if has_creds
-        else "<i>❌ Не настроен</i>"
+        else t("cab_creds_not_configured")
     )
 
     user_stores = await get_user_stores(user_id)
     stores_str = (
         ", ".join(s["name"] for s in user_stores)
         if user_stores
-        else "<i>Нет подключенных точек</i>"
+        else t("cab_no_stores_connected")
     )
 
-    role_str = "👑 Администратор" if user.get("role") == "admin" else "👤 Оператор"
+    role_str = t("role_admin") if user.get("role") == "admin" else t("role_operator")
 
     text = t(
         "cab_profile_card",
-        full_name=user.get("full_name", "Сотрудник"),
+        full_name=user.get("full_name") or t("profile_default_name"),
         username=(
-            f"@{user.get('username')}" if user.get("username") else "Без юзернейма"
+            f"@{user['username']}" if user.get("username") else t("user_no_username")
         ),
         role=role_str,
         creds_status=creds_status,
@@ -361,12 +361,12 @@ async def process_view_my_stores(callback: types.CallbackQuery):
             client.get_iiko_departments_for_user, login, password
         )
     except Exception as e:
-        await callback.answer(f"Ошибка связи с iiko: {str(e)[:100]}", show_alert=True)
+        await callback.answer(t("cab_iiko_conn_error", error=str(e)[:100]), show_alert=True)
         return
 
     if not stores:
         await callback.answer(
-            "В iikoChain не найдено складов или нет прав доступа.", show_alert=True
+            t("cab_no_stores_found"), show_alert=True
         )
         return
 
@@ -403,14 +403,14 @@ async def process_toggle_store(callback: types.CallbackQuery):
         client.get_iiko_departments_for_user, login, password
     )
     target_store = next((s for s in stores if s["id"] == store_id), None)
-    target_name = target_store["name"] if target_store else "Склад iiko"
+    target_name = target_store["name"] if target_store else t("store_default_fallback")
 
     is_connected = await toggle_user_store(callback.from_user.id, store_id, target_name)
 
     msg = (
-        f"✅ Точка «{target_name}» подключена!"
+        t("cab_store_connected", store=target_name)
         if is_connected
-        else f"Точка «{target_name}» отключена."
+        else t("cab_store_disconnected", store=target_name)
     )
     await callback.answer(msg)
 
