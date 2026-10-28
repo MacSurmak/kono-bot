@@ -80,7 +80,7 @@ async def main():
     throttler = ThrottlingMiddleware(rate_limit=0.5)
     auth_guard = AuthMiddleware()
 
-    dp.message.middleware(throttler)
+    # Throttling is applied strictly to callback queries to prevent double-click race conditions
     dp.callback_query.middleware(throttler)
 
     dp.message.middleware(auth_guard)

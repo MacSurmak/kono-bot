@@ -223,7 +223,7 @@ async def process_back_main(callback: types.CallbackQuery, state: FSMContext):
 # ================= KNOWLEDGE BASE MAPPING REMOVAL HANDLERS =================
 @router.callback_query(F.data == "admin:manage_mappings")
 async def process_manage_mappings(callback: types.CallbackQuery, state: FSMContext):
-    """Prompts admin for search query to locate incorrect mappings."""
+    """Prompts admin for search query to locate incorrect mappings and tracks prompt ID."""
     if not await is_admin_user(callback.from_user.id):
         return
     await state.set_state(AdminState.waiting_search_mapping)
@@ -238,18 +238,26 @@ async def process_manage_mappings(callback: types.CallbackQuery, state: FSMConte
             ]
         ]
     )
-    await callback.message.edit_text(
+    msg = await callback.message.edit_text(
         t("admin_search_mapping_prompt"), reply_markup=cancel_kb, parse_mode="HTML"
     )
+    await state.update_data(prompt_msg_id=msg.message_id)
 
 
 @router.message(AdminState.waiting_search_mapping)
 async def handle_search_mapping_input(message: types.Message, state: FSMContext):
-    """Executes search and presents paginated candidates for deletion."""
+    """Executes search, cleans up prompt, and sends paginated results at bottom."""
     if not await is_admin_user(message.from_user.id):
         return
     query = message.text.strip()
-    from storage import search_mappings_for_admin_paginated
+    data = await state.get_data()
+    prompt_id = data.get("prompt_msg_id")
+
+    if prompt_id:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+        except Exception:
+            pass
 
     page_size = 6
     results, total_count = await search_mappings_for_admin_paginated(query, offset=0, limit=page_size)

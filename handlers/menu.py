@@ -125,38 +125,48 @@ async def process_open_cabinet(callback: types.CallbackQuery, state: FSMContext)
 async def process_start_credential_input(
     callback: types.CallbackQuery, state: FSMContext
 ):
-    """Prompts operator for personal iikoOffice login."""
+    """Prompts operator for personal iikoOffice login and records prompt message ID."""
     await state.set_state(UserCabinetState.waiting_iiko_login)
-    await callback.message.edit_text(
+    msg = await callback.message.edit_text(
         t("cab_prompt_login"),
         reply_markup=get_cancel_input_kb(),
         parse_mode="HTML",
     )
+    await state.update_data(prompt_msg_id=msg.message_id)
 
 
 @router.message(UserCabinetState.waiting_iiko_login)
 async def process_login_input(message: types.Message, state: FSMContext):
-    """Records login and prompts operator for password with self-deletion notice."""
+    """Records login, purges previous prompt, and prompts operator for password at bottom."""
     login = message.text.strip()
+    data = await state.get_data()
+    prompt_id = data.get("prompt_msg_id")
+
     if len(login) < 2:
         await message.answer(t("cab_invalid_login"), reply_markup=get_cancel_input_kb())
         return
 
-    await state.update_data(iiko_login=login)
+    if prompt_id:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+        except Exception:
+            pass
+
     await state.set_state(UserCabinetState.waiting_iiko_password)
-    await message.answer(
+    pwd_msg = await message.answer(
         t("cab_prompt_password"),
         reply_markup=get_cancel_input_kb(),
         parse_mode="HTML",
     )
+    await state.update_data(iiko_login=login, prompt_msg_id=pwd_msg.message_id)
 
 
 @router.message(UserCabinetState.waiting_iiko_password)
 async def process_password_input(message: types.Message, state: FSMContext):
-    """Validates credentials against iiko, encrypts password, and purges chat message."""
+    """Validates credentials against iiko, encrypts password, and purges previous prompt."""
     password = message.text.strip()
 
-    # Immediate chat hygiene: destroy message containing plaintext password
+    # Immediate chat hygiene: destroy plaintext password message
     try:
         await message.delete()
     except Exception as e:
@@ -164,7 +174,14 @@ async def process_password_input(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     login = data.get("iiko_login")
+    prompt_id = data.get("prompt_msg_id")
     await state.clear()
+
+    if prompt_id:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+        except Exception:
+            pass
 
     if not login or not password:
         await message.answer(t("cab_creds_empty"))

@@ -18,6 +18,10 @@ class ThrottlingMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
+        # Strictly throttle only CallbackQuery to prevent button race conditions
+        if not isinstance(event, CallbackQuery):
+            return await handler(event, data)
+
         user = data.get("event_from_user")
         if not user or user.is_bot:
             return await handler(event, data)
@@ -26,10 +30,7 @@ class ThrottlingMiddleware(BaseMiddleware):
         last_time = self._user_last_action.get(user.id, 0.0)
 
         if now - last_time < self.rate_limit:
-            if isinstance(event, CallbackQuery):
-                await event.answer(t("throttling_warning"), show_alert=False)
-            elif isinstance(event, Message):
-                await event.answer(t("throttling_warning"))
+            await event.answer(t("throttling_warning"), show_alert=False)
             return None
 
         self._user_last_action[user.id] = now

@@ -519,7 +519,6 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
 
     current_item = target_entry["item"]
     await state.set_state(InvoiceState.waiting_manual_sku)
-    await state.update_data(doc_id=doc_id, item_idx=item_idx)
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -532,19 +531,27 @@ async def process_manual_sku_click(callback: types.CallbackQuery, state: FSMCont
             ]
         ]
     )
-    await callback.message.edit_text(
+    msg = await callback.message.edit_text(
         t("invoice_enter_sku_prompt", raw_name=current_item["raw_name"]),
         reply_markup=cancel_kb,
     )
+    await state.update_data(doc_id=doc_id, item_idx=item_idx, prompt_msg_id=msg.message_id)
 
 
 @router.message(InvoiceState.waiting_manual_sku)
 async def handle_manual_sku_input(message: types.Message, state: FSMContext):
-    """Validates entered SKU against live catalog and transitions to packaging multiplier selection."""
+    """Validates entered SKU against live catalog, cleans prompt, and transitions to packaging multiplier selection."""
     sku = message.text.strip()
     data = await state.get_data()
     doc_id = data.get("doc_id")
     item_idx = data.get("item_idx")
+    prompt_id = data.get("prompt_msg_id")
+
+    if prompt_id:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+        except Exception:
+            pass
 
     session = await get_invoice_session(doc_id)
     if not session or not session.get("unresolved_items"):
@@ -564,6 +571,10 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
     from services.crypto import decrypt_secret
 
     operator = await get_bot_user(message.from_user.id)
+    if not operator or not operator.get("iiko_login") or not operator.get("iiko_password_encrypted"):
+        await message.answer(t("invoice_no_creds_error"))
+        return
+
     login = operator["iiko_login"]
     password = decrypt_secret(operator["iiko_password_encrypted"])
 
@@ -651,7 +662,6 @@ async def process_coeff_selection(callback: types.CallbackQuery, state: FSMConte
 
     if coeff_val == "custom":
         await state.set_state(InvoiceState.waiting_custom_coeff)
-        await state.update_data(doc_id=doc_id, item_idx=item_idx, prod_id=prod_id)
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         cancel_kb = InlineKeyboardMarkup(
@@ -663,8 +673,11 @@ async def process_coeff_selection(callback: types.CallbackQuery, state: FSMConte
                 ]
             ]
         )
-        await callback.message.edit_text(
+        msg = await callback.message.edit_text(
             t("invoice_custom_coeff_prompt"), reply_markup=cancel_kb
+        )
+        await state.update_data(
+            doc_id=doc_id, item_idx=item_idx, prod_id=prod_id, prompt_msg_id=msg.message_id
         )
         return
 
@@ -680,7 +693,7 @@ async def process_coeff_selection(callback: types.CallbackQuery, state: FSMConte
 
 @router.message(InvoiceState.waiting_custom_coeff)
 async def handle_custom_coeff_input(message: types.Message, state: FSMContext):
-    """Validates custom numeric multiplier and applies item alignment."""
+    """Validates custom numeric multiplier, cleans prompt, and applies item alignment at bottom."""
     raw_val = message.text.strip().replace(",", ".")
     try:
         coeff = float(raw_val)
@@ -691,6 +704,13 @@ async def handle_custom_coeff_input(message: types.Message, state: FSMContext):
         return
 
     data = await state.get_data()
+    prompt_id = data.get("prompt_msg_id")
+    if prompt_id:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=prompt_id)
+        except Exception:
+            pass
+
     await state.clear()
     await apply_confirmed_item_match(
         message, data["doc_id"], data["item_idx"], data["prod_id"], coeff, is_new=True

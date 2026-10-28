@@ -32,8 +32,10 @@ SCRATCH_BASE = os.path.join(
 )
 os.makedirs(SCRATCH_BASE, exist_ok=True)
 
-# In-memory storage of simulation reports awaiting admin commit confirmation
+# Staged batch telemetry and debounce workers
 _TRAINING_CACHE: Dict[str, Dict[str, Any]] = {}
+_DEBOUNCE_TASKS: Dict[str, asyncio.Task] = {}
+_PROCESSED_ZIPS: Dict[str, set] = {}
 
 
 class AdminTrainingState(StatesGroup):
@@ -41,7 +43,12 @@ class AdminTrainingState(StatesGroup):
 
 
 def _cleanup_scratch(batch_id: str):
-    """Guaranteed physical cleanup of batch staging scratchpad."""
+    """Guaranteed physical cleanup of batch staging scratchpad and tasks."""
+    task = _DEBOUNCE_TASKS.pop(batch_id, None)
+    if task and not task.done():
+        task.cancel()
+    _PROCESSED_ZIPS.pop(batch_id, None)
+
     target_dir = os.path.join(SCRATCH_BASE, batch_id)
     if os.path.exists(target_dir):
         try:
@@ -49,6 +56,59 @@ def _cleanup_scratch(batch_id: str):
         except OSError as e:
             logger.warning(f"Could not purge scratch directory {target_dir}: {e}")
     _TRAINING_CACHE.pop(batch_id, None)
+
+
+async def _debounced_accumulator_update(
+    batch_id: str,
+    chat_id: int,
+    scratch_dir: str,
+    bot,
+    state: FSMContext,
+):
+    """Waits for upload burst to settle, purges outdated prompt, and sends summary card at bottom."""
+    try:
+        await asyncio.sleep(1.5)
+
+        # Physical filesystem inspection as Single Source of Truth
+        xml_count = 0
+        pdf_count = 0
+        for root, _, files in os.walk(scratch_dir):
+            for f in files:
+                low = f.lower()
+                if low.endswith(".xml"):
+                    xml_count += 1
+                elif low.endswith(".pdf"):
+                    pdf_count += 1
+        total_files = xml_count + pdf_count
+        zip_count = len(_PROCESSED_ZIPS.get(batch_id, set()))
+
+        data = await state.get_data()
+        old_msg_id = data.get("status_msg_id")
+        if old_msg_id:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=old_msg_id)
+            except Exception:
+                pass
+
+        card_text = t(
+            "admin_train_accumulator_title",
+            batch_id=batch_id,
+            zip_count=zip_count,
+            xml_count=xml_count,
+            pdf_count=pdf_count,
+            total_files=total_files,
+        )
+        new_msg = await bot.send_message(
+            chat_id=chat_id,
+            text=card_text,
+            reply_markup=get_training_accumulator_kb(batch_id, total_files=total_files),
+            parse_mode="HTML",
+        )
+        await state.update_data(status_msg_id=new_msg.message_id, total_files=total_files)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.error(f"Error in debounced accumulator update: {e}")
 
 
 @router.callback_query(F.data == "admin:training_menu")
@@ -65,6 +125,7 @@ async def process_start_training_session(
     batch_id = str(uuid.uuid4())[:10]
     batch_dir = os.path.join(SCRATCH_BASE, batch_id)
     os.makedirs(batch_dir, exist_ok=True)
+    _PROCESSED_ZIPS[batch_id] = set()
 
     await state.set_state(AdminTrainingState.accumulating_files)
     await state.update_data(
@@ -72,10 +133,6 @@ async def process_start_training_session(
         scratch_dir=batch_dir,
         status_msg_id=callback.message.message_id,
         chat_id=callback.message.chat.id,
-        zip_count=0,
-        xml_count=0,
-        pdf_count=0,
-        total_files=0,
     )
 
     await callback.message.edit_text(
@@ -94,81 +151,55 @@ async def process_start_training_session(
 
 @router.message(AdminTrainingState.accumulating_files, F.document)
 async def process_accumulate_document(message: types.Message, state: FSMContext):
-    """Receives and unpacks incoming training documents into isolated scratch directory."""
+    """Silently stages and unpacks batch documents without chat spam or UI locking."""
     from storage import is_admin_user
 
     if not await is_admin_user(message.from_user.id):
         return
 
     data = await state.get_data()
-    batch_id = data["batch_id"]
-    scratch_dir = data["scratch_dir"]
+    batch_id = data.get("batch_id")
+    scratch_dir = data.get("scratch_dir")
+    if not batch_id or not scratch_dir:
+        return
 
     doc = message.document
     filename = (doc.file_name or "unknown").lower()
     ext = os.path.splitext(filename)[1]
 
     if ext not in (".zip", ".xml", ".pdf"):
-        await message.answer(
-            f"⚠️ Файл <code>{filename}</code> пропущен: поддерживаются только .zip, .xml и .pdf."
-        )
         return
 
     temp_file = os.path.join(scratch_dir, f"raw_{doc.file_id[:8]}_{filename}")
     await message.bot.download(doc.file_id, destination=temp_file)
 
-    zip_count = data["zip_count"]
-    xml_count = data["xml_count"]
-    pdf_count = data["pdf_count"]
-
     if ext == ".zip":
         try:
-            extracted_xml, extracted_pdf = safe_extract_zip(temp_file, scratch_dir)
-            zip_count += 1
-            xml_count += extracted_xml
-            pdf_count += extracted_pdf
+            safe_extract_zip(temp_file, scratch_dir)
+            _PROCESSED_ZIPS.setdefault(batch_id, set()).add(filename)
         except Exception as e:
-            logger.error(f"Error extracting training zip {filename}: {e}")
-            await message.answer(
-                f"❌ Ошибка распаковки архива <code>{filename}</code>: {e}"
-            )
+            logger.error(f"Error extracting zip {filename}: {e}")
         finally:
             if os.path.exists(temp_file):
                 try:
                     os.remove(temp_file)
                 except OSError:
                     pass
-    elif ext == ".xml":
-        xml_count += 1
-    elif ext == ".pdf":
-        pdf_count += 1
 
-    total_files = xml_count + pdf_count
-    await state.update_data(
-        zip_count=zip_count,
-        xml_count=xml_count,
-        pdf_count=pdf_count,
-        total_files=total_files,
-    )
+    # Debounce interface update to settle multiple concurrent document uploads
+    existing_task = _DEBOUNCE_TASKS.get(batch_id)
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
 
-    # Refresh live dashboard
-    try:
-        await message.bot.edit_message_text(
-            chat_id=data["chat_id"],
-            message_id=data["status_msg_id"],
-            text=t(
-                "admin_train_accumulator_title",
-                batch_id=batch_id,
-                zip_count=zip_count,
-                xml_count=xml_count,
-                pdf_count=pdf_count,
-                total_files=total_files,
-            ),
-            reply_markup=get_training_accumulator_kb(batch_id, total_files=total_files),
-            parse_mode="HTML",
+    _DEBOUNCE_TASKS[batch_id] = asyncio.create_task(
+        _debounced_accumulator_update(
+            batch_id=batch_id,
+            chat_id=message.chat.id,
+            scratch_dir=scratch_dir,
+            bot=message.bot,
+            state=state,
         )
-    except Exception:
-        pass
+    )
 
 
 @router.callback_query(F.data.startswith("admin:train_run:"))
