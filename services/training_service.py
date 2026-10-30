@@ -290,7 +290,8 @@ async def simulate_batch_training(
                         "raw_name": d_item.raw_name,
                         "product_id": i_item["product_id"],
                         "iiko_name": i_item["name"],
-                        "article": d_item.article or i_item["article"],
+                        "article": i_item["article"],
+                        "vendor_article": d_item.article,
                         "package_coefficient": coeff,
                         "weight": 1,
                     }
@@ -346,7 +347,8 @@ async def simulate_batch_training(
                         "raw_name": d_it.raw_name,
                         "product_id": i_it["product_id"],
                         "iiko_name": i_it["name"],
-                        "article": d_it.article or i_it["article"],
+                        "article": i_it["article"],
+                        "vendor_article": d_it.article,
                         "package_coefficient": coeff,
                         "weight": 1,
                     }
@@ -439,6 +441,7 @@ async def apply_batch_training(candidates: List[Dict[str, Any]], admin_id: int) 
                     product_id=c["product_id"],
                     iiko_name=c["iiko_name"],
                     article=c.get("article", ""),
+                    vendor_article=c.get("vendor_article", ""),
                     weight=c.get("weight", 1),
                     package_coefficient=c.get("package_coefficient", 1.0),
                     user_id=admin_id,

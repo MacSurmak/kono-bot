@@ -444,7 +444,9 @@ async def proceed_with_item_alignment(
     unresolved_items = []
 
     for idx, item in enumerate(parsed_items, 1):
-        consensus = await get_consensus_mapping(supplier_id, item["raw_name"])
+        consensus = await get_consensus_mapping(
+            supplier_id, item["raw_name"], item.get("article", "")
+        )
         if consensus and not consensus["has_conflict"]:
             coeff = consensus.get("package_coefficient", 1.0) or 1.0
             matched_items.append(
@@ -807,13 +809,14 @@ async def apply_confirmed_item_match(
         resolved_entry = session["unresolved_items"].pop(target_idx_entry)
         item = resolved_entry["item"]
 
-        # Track vote with operator authorship for self-service revocation
+        # Track vote with operator authorship and separate iiko SKU from vendor SKU
         await record_mapping_vote(
             supplier_id=session["supplier_id"],
             raw_name=item["raw_name"],
             product_id=prod["id"],
             iiko_name=prod["name"],
-            article=prod.get("article", item.get("article", "")),
+            article=prod.get("article", ""),
+            vendor_article=item.get("article", ""),
             weight=3,
             package_coefficient=coeff,
             user_id=session["user_id"],

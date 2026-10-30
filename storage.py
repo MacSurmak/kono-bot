@@ -114,13 +114,17 @@ async def init_db() -> asyncpg.Pool:
                     product_id TEXT NOT NULL,
                     iiko_name TEXT NOT NULL,
                     iiko_article TEXT,
+                    vendor_article TEXT,
                     usage_count INTEGER NOT NULL DEFAULT 1,
                     package_coefficient NUMERIC NOT NULL DEFAULT 1.0,
                     last_used_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(supplier_id, raw_name, product_id)
                 );
+                ALTER TABLE supplier_mappings ADD COLUMN IF NOT EXISTS vendor_article TEXT;
                 CREATE INDEX IF NOT EXISTS idx_supplier_mappings_lookup 
                 ON supplier_mappings (supplier_id, raw_name);
+                CREATE INDEX IF NOT EXISTS idx_supplier_mappings_vendor_article
+                ON supplier_mappings (supplier_id, vendor_article);
             """)
 
             # 5. Mapping audit log for revocations and authorship tracking
@@ -434,16 +438,16 @@ async def record_mapping_vote(
     product_id: str,
     iiko_name: str,
     article: str = "",
+    vendor_article: str = "",
     weight: int = 1,
     package_coefficient: float = 1.0,
     user_id: Optional[int] = None,
     source: str = "manual",
 ) -> None:
     clean_name = normalize_item_name(raw_name)
+    clean_vendor_article = vendor_article.strip() if vendor_article else ""
     if package_coefficient is None or float(package_coefficient) <= 0:
-        raise ValueError(
-            f"Invalid package_coefficient '{package_coefficient}': must be a strictly positive float."
-        )
+        raise ValueError(f"Invalid package_coefficient '{package_coefficient}': must be a strictly positive float.")
     safe_coeff = float(package_coefficient)
 
     pool = get_db_pool()
@@ -453,11 +457,12 @@ async def record_mapping_vote(
             await conn.execute(
                 """
                 INSERT INTO supplier_mappings 
-                (supplier_id, raw_name, product_id, iiko_name, iiko_article, usage_count, package_coefficient, last_used_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                (supplier_id, raw_name, product_id, iiko_name, iiko_article, vendor_article, usage_count, package_coefficient, last_used_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
                 ON CONFLICT (supplier_id, raw_name, product_id) DO UPDATE SET 
                     usage_count = supplier_mappings.usage_count + EXCLUDED.usage_count,
                     package_coefficient = EXCLUDED.package_coefficient,
+                    vendor_article = COALESCE(NULLIF(EXCLUDED.vendor_article, ''), supplier_mappings.vendor_article),
                     last_used_at = CURRENT_TIMESTAMP;
             """,
                 supplier_id,
@@ -465,6 +470,7 @@ async def record_mapping_vote(
                 product_id,
                 iiko_name,
                 article,
+                clean_vendor_article,
                 weight,
                 safe_coeff,
             )
@@ -488,10 +494,13 @@ async def record_mapping_vote(
 
 
 async def get_consensus_mapping(
-    supplier_id: str, raw_name: str
+    supplier_id: str, raw_name: str, vendor_article: str = ""
 ) -> Optional[Dict[str, Any]]:
     clean_name = normalize_item_name(raw_name)
+    clean_vendor_article = vendor_article.strip() if vendor_article else ""
     pool = get_db_pool()
+
+    # Tier 1: Exact match by (supplier_id, raw_name)
     rows = await pool.fetch(
         """
         SELECT product_id, iiko_name, iiko_article, usage_count, package_coefficient
@@ -502,18 +511,35 @@ async def get_consensus_mapping(
         supplier_id,
         clean_name,
     )
+
+    # Tier 2: Deterministic fallback by (supplier_id, vendor_article) when raw_name has batch/GTD suffix variations
+    if not rows and clean_vendor_article:
+        rows = await pool.fetch(
+            """
+            SELECT
+                product_id,
+                MAX(iiko_name) AS iiko_name,
+                MAX(iiko_article) AS iiko_article,
+                SUM(usage_count)::int AS usage_count,
+                (ARRAY_AGG(package_coefficient ORDER BY last_used_at DESC))[1] AS package_coefficient
+            FROM supplier_mappings
+            WHERE supplier_id = $1 AND vendor_article = $2
+            GROUP BY product_id
+            ORDER BY SUM(usage_count) DESC, MAX(last_used_at) DESC;
+        """,
+            supplier_id,
+            clean_vendor_article,
+        )
+
     if not rows:
         return None
 
     total_votes = sum(r["usage_count"] for r in rows)
     winner = rows[0]
     confidence = winner["usage_count"] / total_votes
-    if (
-        winner["package_coefficient"] is None
-        or float(winner["package_coefficient"]) <= 0
-    ):
+    if winner["package_coefficient"] is None or float(winner["package_coefficient"]) <= 0:
         raise ValueError(
-            f"Database corruption: mapping id={winner['id']} has non-positive package_coefficient."
+            f"Database corruption: mapping for product_id={winner['product_id']} has non-positive package_coefficient."
         )
     coeff = float(winner["package_coefficient"])
 
