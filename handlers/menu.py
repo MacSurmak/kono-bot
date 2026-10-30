@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 from aiogram import Router, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
@@ -275,10 +276,15 @@ async def process_test_connection(callback: types.CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("cab:my_mappings"))
-async def process_view_my_mappings(callback: types.CallbackQuery):
+async def process_view_my_mappings(
+    callback: types.CallbackQuery, page_override: Optional[int] = None
+):
     """Displays operator's item alignments across all time with pagination."""
-    parts = callback.data.split(":")
-    page = int(parts[2]) if len(parts) > 2 else 1
+    if page_override is not None:
+        page = page_override
+    else:
+        parts = callback.data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 1
     page_size = PAGE_SIZE_MAPPINGS
     offset = (page - 1) * page_size
     mappings, total_count = await get_user_mappings(
@@ -324,8 +330,7 @@ async def process_revoke_my_mapping(callback: types.CallbackQuery):
     else:
         await callback.answer(t("cab_mapping_revoke_failed"), show_alert=True)
 
-    callback.data = f"cab:my_mappings:{current_page}"
-    await process_view_my_mappings(callback)
+    await process_view_my_mappings(callback, page_override=current_page)
 
 
 @router.callback_query(F.data == "cab:clear_creds")
@@ -342,10 +347,15 @@ async def process_clear_credentials(callback: types.CallbackQuery, state: FSMCon
 
 
 @router.callback_query(F.data.startswith("cab:my_stores"))
-async def process_view_my_stores(callback: types.CallbackQuery):
+async def process_view_my_stores(
+    callback: types.CallbackQuery, page_override: Optional[int] = None
+):
     """Displays paginated interactive toggle list of iikoChain restaurants for operator."""
-    parts = callback.data.split(":")
-    page = int(parts[2]) if len(parts) > 2 else 1
+    if page_override is not None:
+        page = page_override
+    else:
+        parts = callback.data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 1
 
     user = await get_bot_user(callback.from_user.id)
     if (
@@ -424,9 +434,7 @@ async def process_toggle_store(callback: types.CallbackQuery):
         else t("cab_store_disconnected", store=target_name)
     )
     await callback.answer(msg)
-
-    callback.data = f"cab:my_stores:{current_page}"
-    await process_view_my_stores(callback)
+    await process_view_my_stores(callback, page_override=current_page)
 
 
 @router.callback_query(F.data == "cab:cancel_input")
