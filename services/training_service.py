@@ -218,16 +218,13 @@ async def simulate_batch_training(
             continue
 
         supplier_id = matched_iiko_doc.findtext("supplier")
+        iiko_num = (matched_iiko_doc.findtext("documentNumber") or target_num).strip()
         raw_iiko_items = matched_iiko_doc.findall(".//items/item")
 
-        iiko_items = []
+        all_iiko_items = []
         has_inactive = False
         for it in raw_iiko_items:
-            p_id = it.findtext("product")
-            if p_id not in active_pool:
-                has_inactive = True
-                break
-
+            p_id = (it.findtext("product") or "").strip()
             raw_amount = it.findtext("amount")
             if raw_amount is None or not raw_amount.strip():
                 raise BatchTrainingError(
@@ -240,82 +237,87 @@ async def simulate_batch_training(
                     f"iiko invoice #{iiko_num} item missing required 'sum' element."
                 )
 
-            iiko_items.append(
+            in_pool = p_id in active_pool
+            if not in_pool:
+                has_inactive = True
+
+            all_iiko_items.append(
                 {
                     "product_id": p_id,
-                    "name": active_pool[p_id]["name"],
-                    "article": active_pool[p_id]["article"],
+                    "in_active_pool": in_pool,
+                    "name": active_pool[p_id]["name"] if in_pool else "",
+                    "article": active_pool[p_id]["article"] if in_pool else "",
                     "amount": float(raw_amount),
                     "sum": round(float(raw_sum), 2),
                 }
             )
 
-        if has_inactive or len(doc.items) != len(iiko_items):
-            unmatched_invoices_count += 1
-            continue
-
-        # Invariant 1: Strict sequential order
-        is_sequential = True
+        # Invariant 1: Strict sequential order (requires 100% active items and equal line count)
+        is_sequential = False
         temp_seq = []
-        for d_item, i_item in zip(doc.items, iiko_items):
-            if abs(round(d_item.sum, 2) - i_item["sum"]) >= 0.50:
-                is_sequential = False
-                break
+        if not has_inactive and len(doc.items) == len(all_iiko_items):
+            is_sequential = True
+            for d_item, i_item in zip(doc.items, all_iiko_items):
+                if abs(round(d_item.sum, 2) - i_item["sum"]) >= 0.50:
+                    is_sequential = False
+                    break
 
-            d_qty = d_item.quantity
-            i_amount = i_item["amount"]
-            coeff = 1.0
-            if d_qty > 0 and i_amount > 0:
-                ratio = i_amount / d_qty
-                if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
-                    coeff = float(round(ratio))
-                elif abs(ratio - 0.001) < 0.00001:
-                    coeff = 0.001
-                elif abs(ratio - 0.01) < 0.0001:
-                    coeff = 0.01
-                elif abs(ratio - 0.1) < 0.001:
-                    coeff = 0.1
-                elif abs(ratio - 0.5) < 0.001:
-                    coeff = 0.5
-                elif abs(ratio - 0.25) < 0.001:
-                    coeff = 0.25
-                elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
-                    coeff = round(ratio, 2)
-                else:
-                    coeff = round(ratio, 4)
+                d_qty = d_item.quantity
+                i_amount = i_item["amount"]
+                coeff = 1.0
+                if d_qty > 0 and i_amount > 0:
+                    ratio = i_amount / d_qty
+                    if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
+                        coeff = float(round(ratio))
+                    elif abs(ratio - 0.001) < 0.00001:
+                        coeff = 0.001
+                    elif abs(ratio - 0.01) < 0.0001:
+                        coeff = 0.01
+                    elif abs(ratio - 0.1) < 0.001:
+                        coeff = 0.1
+                    elif abs(ratio - 0.5) < 0.001:
+                        coeff = 0.5
+                    elif abs(ratio - 0.25) < 0.001:
+                        coeff = 0.25
+                    elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
+                        coeff = round(ratio, 2)
+                    else:
+                        coeff = round(ratio, 4)
 
-            temp_seq.append(
-                {
-                    "supplier_id": supplier_id,
-                    "raw_name": d_item.raw_name,
-                    "product_id": i_item["product_id"],
-                    "iiko_name": i_item["name"],
-                    "article": d_item.article or i_item["article"],
-                    "package_coefficient": coeff,
-                    "weight": 1,
-                }
-            )
+                temp_seq.append(
+                    {
+                        "supplier_id": supplier_id,
+                        "raw_name": d_item.raw_name,
+                        "product_id": i_item["product_id"],
+                        "iiko_name": i_item["name"],
+                        "article": d_item.article or i_item["article"],
+                        "package_coefficient": coeff,
+                        "weight": 1,
+                    }
+                )
 
-        if is_sequential:
+        if is_sequential and temp_seq:
             strict_matches_count += 1
             candidate_votes.extend(temp_seq)
             continue
 
-        # Invariant 2: Unique sum bijections
+        # Invariant 2: Unique sum bijections across all document lines
         d_sums = Counter(round(it.sum, 2) for it in doc.items)
-        i_sums = Counter(it["sum"] for it in iiko_items)
+        i_sums = Counter(it["sum"] for it in all_iiko_items)
         unique_sums = {
             s for s, count in d_sums.items() if count == 1 and i_sums.get(s) == 1
         }
 
         if unique_sums:
             doc_by_sum = {round(it.sum, 2): it for it in doc.items}
-            iiko_by_sum_row = {it["sum"]: it for it in iiko_items}
+            iiko_by_sum_row = {it["sum"]: it for it in all_iiko_items}
             stage2_pairs = []
 
             for s in unique_sums:
                 d_it = doc_by_sum[s]
                 i_it = iiko_by_sum_row[s]
+                if not i_it["in_active_pool"]:
+                    continue
                 d_qty = d_it.quantity
                 i_amount = i_it["amount"]
                 coeff = 1.0
