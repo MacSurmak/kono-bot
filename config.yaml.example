@@ -1,5 +1,9 @@
 iiko:
   base_url: "https://your-chain.iiko.it:443/resto"
+  catalog_filter:
+    include_groups: []
+    exclude_groups:
+      - "архив"
 
 gemini:
   model: "gemini-3.8-flash"

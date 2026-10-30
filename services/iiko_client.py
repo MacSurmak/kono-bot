@@ -222,32 +222,76 @@ class IikoClient:
         resp = self._request_with_user_auth(login, password, "GET", "/api/products")
         root = ET.fromstring(resp.content)
         all_elements = root.findall(".//productDto")
-        id_to_name = {
-            p.findtext("id"): p.findtext("name", "").strip() for p in all_elements
-        }
+
+        nodes_by_id = {}
+        for p in all_elements:
+            node_id = (p.findtext("id") or "").strip()
+            if node_id:
+                nodes_by_id[node_id] = {
+                    "name": (p.findtext("name") or "").strip(),
+                    "num": (p.findtext("num") or "").strip(),
+                    "code": (p.findtext("code") or "").strip(),
+                    "parent_id": (p.findtext("parentId") or "").strip(),
+                }
+
+        filter_cfg = cfg["iiko"]["catalog_filter"]
+        include_groups = [
+            str(g).strip().lower() for g in filter_cfg["include_groups"] if str(g).strip()
+        ]
+        exclude_groups = [
+            str(g).strip().lower() for g in filter_cfg["exclude_groups"] if str(g).strip()
+        ]
 
         clean_products = []
         for p in all_elements:
-            p_type = p.findtext("productType", "")
+            p_type = (p.findtext("productType") or "").strip()
             if p_type not in ("GOODS", "PREPARED", "MODIFIER"):
                 continue
 
-            name = p.findtext("name", "").strip()
-            cat = p.findtext("productCategory", "").strip()
-            parent_id = p.findtext("parentId")
-            folder_name = id_to_name.get(parent_id, "")
+            name = (p.findtext("name") or "").strip()
+            cat = (p.findtext("productCategory") or "").strip()
+            parent_id = (p.findtext("parentId") or "").strip()
+            direct_folder_name = nodes_by_id.get(parent_id, {}).get("name", "")
 
-            if (
-                "архив" in folder_name.lower()
-                or name.lower().startswith("архив.")
-                or "архив" in cat.lower()
-            ):
+            # Traverse full ancestor hierarchy up to root with cycle guard
+            ancestors = []
+            curr_id = parent_id
+            visited = set()
+            while curr_id and curr_id in nodes_by_id and curr_id not in visited:
+                visited.add(curr_id)
+                anc_node = nodes_by_id[curr_id]
+                ancestors.append(anc_node)
+                curr_id = anc_node["parent_id"]
+
+            # 1. Exclusion check across item name, category, and full ancestor chain
+            is_excluded = False
+            for excl in exclude_groups:
+                if (
+                    excl in name.lower()
+                    or excl in cat.lower()
+                    or any(
+                        excl in anc["name"].lower()
+                        or excl == anc["num"].lower()
+                        or excl == anc["code"].lower()
+                        for anc in ancestors
+                    )
+                ):
+                    is_excluded = True
+                    break
+            if is_excluded:
                 continue
-            if any(
-                k in folder_name.lower()
-                for k in ["агрегаторы яе", "яе мск", "яе калининград"]
-            ):
-                continue
+
+            # 2. Inclusion whitelist check (if configured, item must reside inside allowed group tree)
+            if include_groups:
+                is_included = any(
+                    incl in anc["name"].lower()
+                    or incl == anc["num"].lower()
+                    or incl == anc["code"].lower()
+                    for anc in ancestors
+                    for incl in include_groups
+                )
+                if not is_included:
+                    continue
 
             clean_products.append(
                 {
@@ -255,7 +299,7 @@ class IikoClient:
                     "name": name,
                     "article": p.findtext("num", "") or p.findtext("code", ""),
                     "category": cat,
-                    "folder": folder_name,
+                    "folder": direct_folder_name,
                 }
             )
 

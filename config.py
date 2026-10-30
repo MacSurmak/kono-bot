@@ -25,6 +25,14 @@ def load_and_validate_config() -> dict:
     if not iiko.get("base_url"):
         raise ConfigurationError("Missing required iiko parameter: 'base_url'")
 
+    catalog_filter = iiko.get("catalog_filter")
+    if not isinstance(catalog_filter, dict):
+        raise ConfigurationError("Missing or invalid 'iiko.catalog_filter' section in config.yaml")
+    if "include_groups" not in catalog_filter or not isinstance(catalog_filter["include_groups"], list):
+        raise ConfigurationError("Missing or invalid 'iiko.catalog_filter.include_groups' list in config.yaml")
+    if "exclude_groups" not in catalog_filter or not isinstance(catalog_filter["exclude_groups"], list):
+        raise ConfigurationError("Missing or invalid 'iiko.catalog_filter.exclude_groups' list in config.yaml")
+
     # Validate gemini section
     gemini = config.get("gemini")
     if not isinstance(gemini, dict):
