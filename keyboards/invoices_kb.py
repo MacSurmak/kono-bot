@@ -246,54 +246,52 @@ def get_upload_retry_kb(doc_id: str) -> InlineKeyboardMarkup:
     )
 
 
-def get_packaging_coeff_kb(
-    doc_id: str, item_idx: int, prod_id: str
-) -> InlineKeyboardMarkup:
-    """Generates explicit packaging multiplier choices including fractional and metric units."""
+def get_packaging_coeff_kb(doc_id: str, item_idx: int) -> InlineKeyboardMarkup:
+    """Generates explicit packaging multiplier choices keeping callback_data well under 64-byte limit."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=t("btn_coeff_preset_1"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:1",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:1",
                 ),
                 InlineKeyboardButton(
                     text=t("btn_coeff_preset_10"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:10",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:10",
                 ),
                 InlineKeyboardButton(
                     text=t("btn_coeff_preset_20"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:20",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:20",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=t("btn_coeff_preset_50"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:50",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:50",
                 ),
                 InlineKeyboardButton(
                     text=t("btn_coeff_preset_100"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:100",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:100",
                 ),
                 InlineKeyboardButton(
                     text=t("btn_coeff_preset_500"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:500",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:500",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=t("btn_coeff_metric_gram"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:0.001",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:0.001",
                 ),
                 InlineKeyboardButton(
                     text=t("btn_coeff_half"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:0.5",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:0.5",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=t("btn_custom_coeff"),
-                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:{prod_id}:custom",
+                    callback_data=f"inv:coeff:{doc_id}:{item_idx}:custom",
                 ),
             ],
             [

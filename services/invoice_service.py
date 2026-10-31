@@ -19,9 +19,10 @@ def build_iiko_xml(
     doc: RawInvoiceDocument, store_id: str, supplier_id: str, matched_items: list
 ) -> str:
     escaped_doc_num = xml_escape.escape(doc.doc_number)
+    sorted_items = sorted(matched_items, key=lambda x: int(x["num"]))
 
     item_blocks = []
-    for it in matched_items:
+    for it in sorted_items:
         coeff = float(it["coefficient"])
         if coeff <= 0:
             raise ValueError(

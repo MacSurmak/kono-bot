@@ -624,6 +624,8 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
         return
 
     await state.clear()
+    session["pending_prod_id"] = prod["id"]
+    await save_invoice_session(doc_id, session["user_id"], session)
     current_item = target_entry["item"]
 
     await message.answer(
@@ -633,7 +635,7 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
             sku=prod.get("article", sku),
             qty=current_item["quantity"],
         ),
-        reply_markup=get_packaging_coeff_kb(doc_id, item_idx, prod["id"]),
+        reply_markup=get_packaging_coeff_kb(doc_id, item_idx),
     )
 
 
@@ -665,6 +667,8 @@ async def process_manual_match(callback: types.CallbackQuery):
         await callback.answer(t("invoice_sku_not_found", sku=prod_id), show_alert=True)
         return
 
+    session["pending_prod_id"] = prod["id"]
+    await save_invoice_session(doc_id, session["user_id"], session)
     current_item = target_entry["item"]
 
     await callback.message.edit_text(
@@ -674,7 +678,7 @@ async def process_manual_match(callback: types.CallbackQuery):
             sku=prod.get("article", "Б/А"),
             qty=current_item["quantity"],
         ),
-        reply_markup=get_packaging_coeff_kb(doc_id, item_idx, prod["id"]),
+        reply_markup=get_packaging_coeff_kb(doc_id, item_idx),
     )
 
 
@@ -682,7 +686,18 @@ async def process_manual_match(callback: types.CallbackQuery):
 async def process_coeff_selection(callback: types.CallbackQuery, state: FSMContext):
     """Handles packaging multiplier choice or prompts for custom number."""
     parts = callback.data.split(":")
-    doc_id, item_idx, prod_id, coeff_val = parts[2], int(parts[3]), parts[4], parts[5]
+    doc_id, item_idx = parts[2], int(parts[3])
+    coeff_val = parts[4] if len(parts) == 5 else parts[5]
+
+    session = await get_invoice_session(doc_id)
+    if not session:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
+
+    prod_id = session.get("pending_prod_id") if len(parts) == 5 else parts[4]
+    if not prod_id:
+        await callback.message.edit_text(t("invoice_session_expired"))
+        return
 
     if coeff_val == "custom":
         await state.set_state(InvoiceState.waiting_custom_coeff)
@@ -835,6 +850,7 @@ async def apply_confirmed_item_match(
                 "vat": item["vat_rate"],
             }
         )
+        session["matched_items"].sort(key=lambda x: int(x["num"]))
         await save_invoice_session(doc_id, session["user_id"], session)
         logger.info(
             f"Item alignment confirmed: '{item['raw_name']}' -> '{prod['name']}' (coeff={coeff})"

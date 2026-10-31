@@ -1,5 +1,6 @@
 import os
 import json
+import secrets
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import asdict, is_dataclass
 import asyncpg
@@ -328,8 +329,6 @@ async def get_all_bot_users_paginated(
 
 
 async def create_invite_token(created_by: int) -> str:
-    import secrets
-
     token = secrets.token_urlsafe(16)
     pool = get_db_pool()
     await pool.execute(

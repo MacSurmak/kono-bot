@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 import zipfile
 import shutil
 import xml.etree.ElementTree as ET
@@ -21,6 +22,26 @@ DATE_BUFFER_DAYS = 5
 
 class BatchTrainingError(Exception):
     """Raised when batch archive extraction or matching invariants fail."""
+
+
+def compute_packaging_coefficient(d_qty: float, i_amount: float) -> float:
+    """Computes deterministic packaging multiplier only when invoice quantity is discrete and unit weight is exact."""
+    if d_qty <= 0 or i_amount <= 0:
+        return 1.0
+    # If supplier quantity is already fractional (e.g. 1.020 kg), item is billed by continuous weight -> coeff is 1.0
+    if abs(d_qty - round(d_qty)) > 0.001:
+        return 1.0
+
+    ratio = i_amount / d_qty
+    # Integer pack count (1, 2, 5, 6, 8, 10, 12, 20, 24, 25, 50, 75, 100, 200, 250, 500, 1000)
+    if abs(ratio - round(ratio)) < 0.001 and round(ratio) >= 1:
+        return float(round(ratio))
+
+    # Exact metric pack weight/volume in grams/milliliters (up to 3 decimal places, e.g. 0.04, 0.125, 0.454, 1.8, 2.05)
+    if 0.001 <= ratio <= 10.0 and abs(ratio * 1000 - round(ratio * 1000)) < 0.01:
+        return round(round(ratio * 1000) / 1000.0, 3)
+
+    return 1.0
 
 
 def safe_extract_zip(zip_path: str, extract_dir: str) -> Tuple[int, int]:
@@ -101,8 +122,6 @@ async def simulate_batch_training(
     scratch_dir: str, login: str, password: str
 ) -> Dict[str, Any]:
     """Executes deterministic dry-run training simulation using admin's iiko credentials."""
-    import asyncio
-
     files = [
         os.path.join(scratch_dir, f)
         for f in os.listdir(scratch_dir)
@@ -262,27 +281,9 @@ async def simulate_batch_training(
                     is_sequential = False
                     break
 
-                d_qty = d_item.quantity
-                i_amount = i_item["amount"]
-                coeff = 1.0
-                if d_qty > 0 and i_amount > 0:
-                    ratio = i_amount / d_qty
-                    if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
-                        coeff = float(round(ratio))
-                    elif abs(ratio - 0.001) < 0.00001:
-                        coeff = 0.001
-                    elif abs(ratio - 0.01) < 0.0001:
-                        coeff = 0.01
-                    elif abs(ratio - 0.1) < 0.001:
-                        coeff = 0.1
-                    elif abs(ratio - 0.5) < 0.001:
-                        coeff = 0.5
-                    elif abs(ratio - 0.25) < 0.001:
-                        coeff = 0.25
-                    elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
-                        coeff = round(ratio, 2)
-                    else:
-                        coeff = round(ratio, 4)
+                coeff = compute_packaging_coefficient(
+                    d_item.quantity, i_item["amount"]
+                )
 
                 temp_seq.append(
                     {
@@ -319,27 +320,10 @@ async def simulate_batch_training(
                 i_it = iiko_by_sum_row[s]
                 if not i_it["in_active_pool"]:
                     continue
-                d_qty = d_it.quantity
-                i_amount = i_it["amount"]
-                coeff = 1.0
-                if d_qty > 0 and i_amount > 0:
-                    ratio = i_amount / d_qty
-                    if abs(ratio - round(ratio)) < 0.01 and round(ratio) >= 1:
-                        coeff = float(round(ratio))
-                    elif abs(ratio - 0.001) < 0.00001:
-                        coeff = 0.001
-                    elif abs(ratio - 0.01) < 0.0001:
-                        coeff = 0.01
-                    elif abs(ratio - 0.1) < 0.001:
-                        coeff = 0.1
-                    elif abs(ratio - 0.5) < 0.001:
-                        coeff = 0.5
-                    elif abs(ratio - 0.25) < 0.001:
-                        coeff = 0.25
-                    elif abs(ratio * 10 - round(ratio * 10)) < 0.01:
-                        coeff = round(ratio, 2)
-                    else:
-                        coeff = round(ratio, 4)
+
+                coeff = compute_packaging_coefficient(
+                    d_it.quantity, i_it["amount"]
+                )
 
                 stage2_pairs.append(
                     {
