@@ -381,7 +381,23 @@ async def process_commit_training_results(callback: types.CallbackQuery):
         )
     except Exception as e:
         logger.exception(f"Failed to commit training batch {batch_id}: {e}")
-        await callback.message.edit_text(t("admin_train_commit_error", error=str(e)))
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_back"), callback_data="admin:open"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ]
+            ]
+        )
+        await callback.message.edit_text(
+            t("admin_train_commit_error", error=str(e)),
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
         _cleanup_scratch(batch_id)
 
 

@@ -259,7 +259,10 @@ async def process_manage_mappings(callback: types.CallbackQuery, state: FSMConte
             [
                 InlineKeyboardButton(
                     text=t("admin_btn_back"), callback_data="admin:back_main"
-                )
+                ),
+                InlineKeyboardButton(
+                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                ),
             ]
         ]
     )
@@ -292,8 +295,29 @@ async def handle_search_mapping_input(message: types.Message, state: FSMContext)
     )
 
     if not results:
+        await state.clear()
+        empty_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_search_again"),
+                        callback_data="admin:manage_mappings",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_back"), callback_data="admin:back_main"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ],
+            ]
+        )
         await message.answer(
-            t("admin_search_mapping_empty", query=query), parse_mode="HTML"
+            t("admin_search_mapping_empty", query=query),
+            reply_markup=empty_kb,
+            parse_mode="HTML",
         )
         return
 
