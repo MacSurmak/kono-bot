@@ -82,6 +82,7 @@ LEXICON: Dict[str, str] = {
     "admin_status_updated": "✅ Статус доступа обновлен!",
     "admin_cannot_modify_primary": "⛔ Запрещено разжаловать или блокировать первичного администратора сети.",
     "admin_btn_mappings": "🗑 Удаление сопоставлений",
+    "admin_btn_search_again": "🔍 Искать снова",
     "badge_admin": "👑 ",
     "badge_operator": "👤 ",
     "badge_blocked": " [БЛОК]",

@@ -52,7 +52,10 @@ def get_admin_users_list_kb(
         [
             InlineKeyboardButton(
                 text=t("admin_btn_back"), callback_data="admin:back_main"
-            )
+            ),
+            InlineKeyboardButton(
+                text=t("menu_btn_back"), callback_data="menu:back_main"
+            ),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -109,11 +112,21 @@ def get_user_manage_card_kb(
             )
         ]
     )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("admin_btn_back"), callback_data="admin:back_main"
+            ),
+            InlineKeyboardButton(
+                text=t("menu_btn_back"), callback_data="menu:back_main"
+            ),
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_admin_main_kb() -> InlineKeyboardMarkup:
-    """Constructs admin control panel inline buttons without hardcoded text."""
+    """Constructs admin control panel inline buttons with full cross-menu navigation."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -135,6 +148,14 @@ def get_admin_main_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=t("admin_btn_training"), callback_data="admin:training_menu"
                 )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("menu_btn_cabinet"), callback_data="menu:cabinet"
+                ),
+                InlineKeyboardButton(
+                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                ),
             ],
         ]
     )
@@ -244,8 +265,18 @@ def get_admin_mappings_kb(
     rows.append(
         [
             InlineKeyboardButton(
-                text=t("admin_btn_back"), callback_data="admin:back_main"
+                text=t("admin_btn_search_again"), callback_data="admin:manage_mappings"
             )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("admin_btn_back"), callback_data="admin:back_main"
+            ),
+            InlineKeyboardButton(
+                text=t("menu_btn_back"), callback_data="menu:back_main"
+            ),
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)

@@ -127,9 +127,37 @@ async def _debounced_accumulator_update(
 async def process_start_training_session(
     callback: types.CallbackQuery, state: FSMContext
 ):
-    """Activates training batch accumulator session for admin."""
+    """Validates admin iiko credentials upfront and activates training batch accumulator session."""
     if not await is_admin_user(callback.from_user.id):
         await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    admin = await get_bot_user(callback.from_user.id)
+    if (
+        not admin
+        or not admin.get("iiko_login")
+        or not admin.get("iiko_password_encrypted")
+    ):
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("btn_setup_iiko_creds"), callback_data="cab:set_creds"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_back"), callback_data="admin:open"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ],
+            ]
+        )
+        await callback.message.edit_text(
+            t("invoice_no_creds_error"), reply_markup=kb, parse_mode="HTML"
+        )
         return
 
     batch_id = str(uuid.uuid4())[:10]
@@ -300,7 +328,10 @@ async def process_execute_training_simulation(
                 [
                     InlineKeyboardButton(
                         text=t("admin_btn_back"), callback_data="admin:open"
-                    )
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
                 ]
             ]
         )
@@ -392,7 +423,14 @@ async def process_cancel_training(callback: types.CallbackQuery, state: FSMConte
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=t("admin_btn_back"), callback_data="admin:open")]
+            [
+                InlineKeyboardButton(
+                    text=t("admin_btn_back"), callback_data="admin:open"
+                ),
+                InlineKeyboardButton(
+                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                ),
+            ]
         ]
     )
     await callback.message.edit_text(

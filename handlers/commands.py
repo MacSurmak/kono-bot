@@ -3,7 +3,7 @@ from aiogram.filters import CommandStart, Command, CommandObject
 from loguru import logger
 from storage import validate_and_consume_invite, get_bot_user, is_admin_user
 from lexicon import t
-from keyboards.menu_kb import get_main_menu_kb
+from keyboards.menu_kb import get_main_menu_kb, get_post_action_nav_kb
 
 router = Router(name="commands_router")
 
@@ -69,5 +69,7 @@ async def handle_menu_command(message: types.Message):
 
 @router.message(Command("help"))
 async def handle_help(message: types.Message):
-    """Displays user assistance manual from lexicon."""
-    await message.answer(t("help_text"), parse_mode="HTML")
+    """Displays user assistance manual from lexicon with navigation buttons."""
+    await message.answer(
+        t("help_text"), reply_markup=get_post_action_nav_kb(), parse_mode="HTML"
+    )

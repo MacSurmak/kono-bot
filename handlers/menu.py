@@ -17,6 +17,7 @@ from config import (
 )
 from storage import (
     get_bot_user,
+    is_admin_user,
     update_user_iiko_credentials,
     get_user_stores,
     toggle_user_store,
@@ -29,6 +30,7 @@ from keyboards.menu_kb import (
     get_user_stores_toggle_kb,
     get_cancel_input_kb,
     get_user_mappings_kb,
+    get_post_action_nav_kb,
 )
 from keyboards.invoices_kb import get_setup_creds_kb
 
@@ -44,7 +46,7 @@ class UserCabinetState(StatesGroup):
 async def process_back_main_menu(callback: types.CallbackQuery, state: FSMContext):
     """Returns operator to top-level interactive navigation menu."""
     await state.clear()
-    is_admin = callback.from_user.id in get_admin_ids()
+    is_admin = await is_admin_user(callback.from_user.id)
     await callback.message.edit_text(
         t("menu_main_title"),
         reply_markup=get_main_menu_kb(is_admin=is_admin),
@@ -54,14 +56,59 @@ async def process_back_main_menu(callback: types.CallbackQuery, state: FSMContex
 
 @router.callback_query(F.data == "menu:upload_info")
 async def process_upload_info(callback: types.CallbackQuery):
-    """Explains invoice upload workflow to operator."""
+    """Validates operator credentials and connected stores upfront before showing upload instructions."""
+    user = await get_bot_user(callback.from_user.id)
+    if (
+        not user
+        or not user.get("iiko_login")
+        or not user.get("iiko_password_encrypted")
+    ):
+        await callback.message.edit_text(
+            t("invoice_no_creds_error"),
+            reply_markup=get_setup_creds_kb("setup"),
+            parse_mode="HTML",
+        )
+        return
+
+    user_stores = await get_user_stores(callback.from_user.id)
+    if not user_stores:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("btn_connect_stores"), callback_data="cab:my_stores"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ],
+            ]
+        )
+        await callback.message.edit_text(
+            t("invoice_no_stores_error"), reply_markup=kb, parse_mode="HTML"
+        )
+        return
+
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                    text=t("cab_btn_my_stores"), callback_data="cab:my_stores"
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+                ),
+                InlineKeyboardButton(
+                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                ),
+            ],
         ]
     )
     await callback.message.edit_text(
@@ -71,17 +118,10 @@ async def process_upload_info(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu:help")
 async def process_menu_help(callback: types.CallbackQuery):
-    """Displays user assistance manual with return button."""
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=t("menu_btn_back"), callback_data="menu:back_main"
-                )
-            ]
-        ]
+    """Displays user assistance manual with full navigation buttons."""
+    await callback.message.edit_text(
+        t("help_text"), reply_markup=get_post_action_nav_kb(), parse_mode="HTML"
     )
-    await callback.message.edit_text(t("help_text"), reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "menu:cabinet")
@@ -218,9 +258,17 @@ async def process_password_input(message: types.Message, state: FSMContext):
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+                        text=t("btn_connect_stores"), callback_data="cab:my_stores"
                     )
-                ]
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ],
             ]
         )
         await status_msg.edit_text(
@@ -241,7 +289,10 @@ async def process_password_input(message: types.Message, state: FSMContext):
                 [
                     InlineKeyboardButton(
                         text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
-                    )
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
                 ],
             ]
         )
@@ -296,8 +347,11 @@ async def process_view_my_mappings(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text=t("menu_btn_back"), callback_data="menu:cabinet"
-                    )
+                        text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
                 ]
             ]
         )

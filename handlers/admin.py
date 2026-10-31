@@ -78,9 +78,23 @@ async def process_create_invite(callback: types.CallbackQuery):
     token = await create_invite_token(created_by=callback.from_user.id)
     invite_url = f"https://t.me/{bot_info.username}?start=inv_{token}"
 
+    nav_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("admin_btn_back"), callback_data="admin:back_main"
+                ),
+                InlineKeyboardButton(
+                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                ),
+            ]
+        ]
+    )
     logger.info(f"Admin {callback.from_user.id} generated a new invite token: {token}")
-    await callback.message.answer(
-        t("admin_invite_created", invite_url=invite_url), parse_mode="HTML"
+    await callback.message.edit_text(
+        t("admin_invite_created", invite_url=invite_url),
+        reply_markup=nav_kb,
+        parse_mode="HTML",
     )
 
 
@@ -100,7 +114,21 @@ async def process_list_users(callback: types.CallbackQuery):
         offset=offset, limit=page_size
     )
     if not users and page == 1:
-        await callback.message.edit_text(t("admin_users_empty"), parse_mode="HTML")
+        nav_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_back"), callback_data="admin:back_main"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ]
+            ]
+        )
+        await callback.message.edit_text(
+            t("admin_users_empty"), reply_markup=nav_kb, parse_mode="HTML"
+        )
         return
 
     total_pages = max(1, (total_count + page_size - 1) // page_size)

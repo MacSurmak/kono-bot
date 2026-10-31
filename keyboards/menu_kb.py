@@ -131,7 +131,14 @@ def get_user_stores_toggle_kb(
         rows.append(nav_row)
 
     rows.append(
-        [InlineKeyboardButton(text=t("menu_btn_back"), callback_data="menu:cabinet")]
+        [
+            InlineKeyboardButton(
+                text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+            ),
+            InlineKeyboardButton(
+                text=t("menu_btn_back"), callback_data="menu:back_main"
+            ),
+        ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -144,7 +151,33 @@ def get_cancel_input_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=t("btn_cancel"), callback_data="cab:cancel_input"
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                )
+            ],
+        ]
+    )
+
+
+def get_post_action_nav_kb() -> InlineKeyboardMarkup:
+    """Constructs universal navigation footer preventing dead-end screens."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("menu_btn_upload"), callback_data="menu:upload_info"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+                ),
+                InlineKeyboardButton(
+                    text=t("menu_btn_back"), callback_data="menu:back_main"
+                ),
+            ],
         ]
     )
 
@@ -193,6 +226,13 @@ def get_user_mappings_kb(
         rows.append(nav_row)
 
     rows.append(
-        [InlineKeyboardButton(text=t("menu_btn_back"), callback_data="menu:cabinet")]
+        [
+            InlineKeyboardButton(
+                text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+            ),
+            InlineKeyboardButton(
+                text=t("menu_btn_back"), callback_data="menu:back_main"
+            ),
+        ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)

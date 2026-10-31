@@ -45,6 +45,7 @@ from keyboards.invoices_kb import (
     get_upload_retry_kb,
     get_setup_creds_kb,
 )
+from keyboards.menu_kb import get_post_action_nav_kb
 
 
 class InvoiceState(StatesGroup):
@@ -134,7 +135,11 @@ async def handle_document_upload(message: types.Message):
     ext = os.path.splitext(filename)[1].lower()
 
     if ext not in (".xml", ".pdf"):
-        await message.answer(t("invoice_invalid_format"))
+        await message.answer(
+            t("invoice_invalid_format"),
+            reply_markup=get_post_action_nav_kb(),
+            parse_mode="HTML",
+        )
         return
 
     # Fail-Fast: verify operator has connected stores
@@ -159,7 +164,15 @@ async def handle_document_upload(message: types.Message):
                     InlineKeyboardButton(
                         text=t("btn_connect_stores"), callback_data="cab:my_stores"
                     )
-                ]
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ],
             ]
         )
         await message.answer(
@@ -371,7 +384,9 @@ async def execute_parse_and_alignment(
                             "invoice_supplier_none_matched",
                             raw_name=raw_supp_name,
                             inn=supplier_inn or t("invoice_inn_not_specified"),
-                        )
+                        ),
+                        reply_markup=get_post_action_nav_kb(),
+                        parse_mode="HTML",
                     )
                     await cleanup_session_data(doc_id)
                     return
@@ -392,7 +407,11 @@ async def execute_parse_and_alignment(
     except Exception as e:
         logger.exception(f"Document parsing error for {temp_path}: {e}")
         await cleanup_session_data(doc_id)
-        await message.edit_text(t("invoice_parsing_error", error=str(e)))
+        await message.edit_text(
+            t("invoice_parsing_error", error=str(e)),
+            reply_markup=get_post_action_nav_kb(),
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data.startswith("inv:supp:"))
@@ -1136,7 +1155,9 @@ async def process_draft_upload(callback: types.CallbackQuery):
                     store_name=session["store_name"],
                     iiko_doc_num=iiko_doc_num,
                     inc_doc_num=raw_doc.doc_number or "Б/Н",
-                )
+                ),
+                reply_markup=get_post_action_nav_kb(),
+                parse_mode="HTML",
             )
         else:
             logger.error(
@@ -1157,7 +1178,11 @@ async def process_draft_upload(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("inv:cancel:"))
 async def process_invoice_cancel(callback: types.CallbackQuery):
-    """Cancels invoice processing and deletes local temporary artifacts."""
+    """Cancels invoice processing, deletes local temporary artifacts, and shows navigation options."""
     doc_id = callback.data.split(":")[2]
     await cleanup_session_data(doc_id)
-    await callback.message.edit_text(t("invoice_cancelled"))
+    await callback.message.edit_text(
+        t("invoice_cancelled"),
+        reply_markup=get_post_action_nav_kb(),
+        parse_mode="HTML",
+    )

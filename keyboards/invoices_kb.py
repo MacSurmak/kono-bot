@@ -211,21 +211,31 @@ def get_invoice_store_choice_kb(
 
 
 def get_setup_creds_kb(doc_id: str) -> InlineKeyboardMarkup:
-    """Presents quick redirect button to configure iiko credentials."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=t("btn_setup_iiko_creds"), callback_data="cab:set_creds"
-                )
-            ],
+    """Presents quick redirect buttons to configure iiko credentials or navigate back."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("btn_setup_iiko_creds"), callback_data="cab:set_creds"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=t("cab_btn_to_cabinet"), callback_data="menu:cabinet"
+            ),
+            InlineKeyboardButton(
+                text=t("menu_btn_back"), callback_data="menu:back_main"
+            ),
+        ],
+    ]
+    if doc_id != "setup":
+        rows.append(
             [
                 InlineKeyboardButton(
                     text=t("btn_cancel"), callback_data=f"inv:cancel:{doc_id}"
                 )
-            ],
-        ]
-    )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_upload_retry_kb(doc_id: str) -> InlineKeyboardMarkup:
