@@ -106,7 +106,7 @@ async def init_db() -> asyncpg.Pool:
                 CREATE INDEX IF NOT EXISTS idx_user_stores_user ON user_stores (user_id);
             """)
 
-            # 4. Supplier mappings (network consensus)
+            # 4. Supplier mappings (network consensus by variant: product_id + package_coefficient)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS supplier_mappings (
                     id BIGSERIAL PRIMARY KEY,
@@ -119,9 +119,27 @@ async def init_db() -> asyncpg.Pool:
                     usage_count INTEGER NOT NULL DEFAULT 1,
                     package_coefficient NUMERIC NOT NULL DEFAULT 1.0,
                     last_used_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(supplier_id, raw_name, product_id)
+                    CONSTRAINT uq_supplier_mappings_variant UNIQUE(supplier_id, raw_name, product_id, package_coefficient)
                 );
                 ALTER TABLE supplier_mappings ADD COLUMN IF NOT EXISTS vendor_article TEXT;
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'supplier_mappings_supplier_id_raw_name_product_id_key'
+                    ) THEN
+                        ALTER TABLE supplier_mappings
+                        DROP CONSTRAINT supplier_mappings_supplier_id_raw_name_product_id_key;
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'uq_supplier_mappings_variant'
+                    ) THEN
+                        ALTER TABLE supplier_mappings
+                        ADD CONSTRAINT uq_supplier_mappings_variant
+                        UNIQUE (supplier_id, raw_name, product_id, package_coefficient);
+                    END IF;
+                END $$;
                 CREATE INDEX IF NOT EXISTS idx_supplier_mappings_lookup 
                 ON supplier_mappings (supplier_id, raw_name);
                 CREATE INDEX IF NOT EXISTS idx_supplier_mappings_vendor_article
@@ -452,15 +470,14 @@ async def record_mapping_vote(
     pool = get_db_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # Update network consensus
+            # Update network consensus per distinct (product_id, package_coefficient) variant
             await conn.execute(
                 """
                 INSERT INTO supplier_mappings 
                 (supplier_id, raw_name, product_id, iiko_name, iiko_article, vendor_article, usage_count, package_coefficient, last_used_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
-                ON CONFLICT (supplier_id, raw_name, product_id) DO UPDATE SET 
+                ON CONFLICT (supplier_id, raw_name, product_id, package_coefficient) DO UPDATE SET 
                     usage_count = supplier_mappings.usage_count + EXCLUDED.usage_count,
-                    package_coefficient = EXCLUDED.package_coefficient,
                     vendor_article = COALESCE(NULLIF(EXCLUDED.vendor_article, ''), supplier_mappings.vendor_article),
                     last_used_at = CURRENT_TIMESTAMP;
             """,
@@ -499,36 +516,55 @@ async def get_consensus_mapping(
     clean_vendor_article = vendor_article.strip() if vendor_article else ""
     pool = get_db_pool()
 
-    # Tier 1: Exact match by (supplier_id, raw_name)
-    rows = await pool.fetch(
+    # Tier 1: Exact match by (supplier_id, raw_name) grouped by (product_id, package_coefficient)
+    raw_rows = await pool.fetch(
         """
-        SELECT product_id, iiko_name, iiko_article, usage_count, package_coefficient
+        SELECT
+            product_id,
+            package_coefficient,
+            MAX(iiko_name) AS iiko_name,
+            MAX(iiko_article) AS iiko_article,
+            SUM(usage_count)::int AS usage_count
         FROM supplier_mappings
         WHERE supplier_id = $1 AND raw_name = $2
-        ORDER BY usage_count DESC, last_used_at DESC;
+        GROUP BY product_id, package_coefficient
+        ORDER BY SUM(usage_count) DESC, MAX(last_used_at) DESC;
     """,
         supplier_id,
         clean_name,
     )
 
-    # Tier 2: Deterministic fallback by (supplier_id, vendor_article) when raw_name has batch/GTD suffix variations
-    if not rows and clean_vendor_article:
-        rows = await pool.fetch(
+    # Tier 2: Vendor article aggregation across all historical GTD batches of the same SKU
+    vendor_rows = []
+    if clean_vendor_article:
+        vendor_rows = await pool.fetch(
             """
             SELECT
                 product_id,
+                package_coefficient,
                 MAX(iiko_name) AS iiko_name,
                 MAX(iiko_article) AS iiko_article,
-                SUM(usage_count)::int AS usage_count,
-                (ARRAY_AGG(package_coefficient ORDER BY last_used_at DESC))[1] AS package_coefficient
+                SUM(usage_count)::int AS usage_count
             FROM supplier_mappings
             WHERE supplier_id = $1 AND vendor_article = $2
-            GROUP BY product_id
+            GROUP BY product_id, package_coefficient
             ORDER BY SUM(usage_count) DESC, MAX(last_used_at) DESC;
         """,
             supplier_id,
             clean_vendor_article,
         )
+
+    # Use vendor_article election if raw_name is unseen or if vendor_article has stronger multi-batch sample
+    if not raw_rows:
+        rows = vendor_rows
+    elif vendor_rows:
+        v_total = sum(r["usage_count"] for r in vendor_rows)
+        r_total = sum(r["usage_count"] for r in raw_rows)
+        v_conf = vendor_rows[0]["usage_count"] / v_total
+        # If vendor_article has a broader multi-batch history and decisive >75% majority (or if it exposes a conflict), use it
+        rows = vendor_rows if (v_total > r_total and v_conf > 0.75) or (v_total > r_total and len(vendor_rows) > 1 and v_conf <= 0.75) else raw_rows
+    else:
+        rows = raw_rows
 
     if not rows:
         return None
@@ -550,7 +586,7 @@ async def get_consensus_mapping(
         "package_coefficient": coeff,
         "total_votes": total_votes,
         "confidence": confidence,
-        "has_conflict": len(rows) > 1 and confidence < 0.75,
+        "has_conflict": len(rows) > 1 and confidence <= 0.75,
         "all_variants": [dict(r) for r in rows],
     }
 
@@ -595,17 +631,19 @@ async def revoke_user_mapping(user_id: int, audit_log_id: int) -> bool:
             supplier_id = audit_entry["supplier_id"]
             raw_name = audit_entry["raw_name"]
             product_id = audit_entry["product_id"]
+            package_coeff = audit_entry["package_coefficient"]
 
             mapping = await conn.fetchrow(
                 """
                 SELECT id, usage_count 
                 FROM supplier_mappings 
-                WHERE supplier_id = $1 AND raw_name = $2 AND product_id = $3 
+                WHERE supplier_id = $1 AND raw_name = $2 AND product_id = $3 AND package_coefficient = $4
                 FOR UPDATE;
             """,
                 supplier_id,
                 raw_name,
                 product_id,
+                package_coeff,
             )
 
             if mapping:

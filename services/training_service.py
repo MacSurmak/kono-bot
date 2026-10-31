@@ -362,17 +362,23 @@ async def simulate_batch_training(
 
     unique_candidates = {}
     for c in candidate_votes:
-        key = (c["supplier_id"], c["raw_name"].strip().lower())
-        if key not in unique_candidates:
-            unique_candidates[key] = c
+        variant_key = (
+            c["supplier_id"],
+            c["raw_name"].strip().lower(),
+            c["product_id"],
+            c["package_coefficient"],
+        )
+        if variant_key not in unique_candidates:
+            unique_candidates[variant_key] = dict(c)
         else:
-            unique_candidates[key]["weight"] += 1
+            unique_candidates[variant_key]["weight"] += 1
 
-    for key, c in unique_candidates.items():
-        if key not in current_map:
+    for variant_key, c in unique_candidates.items():
+        lookup_key = (variant_key[0], variant_key[1])
+        if lookup_key not in current_map:
             new_items_count += 1
         else:
-            curr = current_map[key]
+            curr = current_map[lookup_key]
             if curr["product_id"] == c["product_id"]:
                 confirmed_count += 1
                 if (
