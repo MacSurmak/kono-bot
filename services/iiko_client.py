@@ -236,10 +236,14 @@ class IikoClient:
 
         filter_cfg = cfg["iiko"]["catalog_filter"]
         include_groups = [
-            str(g).strip().lower() for g in filter_cfg["include_groups"] if str(g).strip()
+            str(g).strip().lower()
+            for g in filter_cfg["include_groups"]
+            if str(g).strip()
         ]
         exclude_groups = [
-            str(g).strip().lower() for g in filter_cfg["exclude_groups"] if str(g).strip()
+            str(g).strip().lower()
+            for g in filter_cfg["exclude_groups"]
+            if str(g).strip()
         ]
 
         clean_products = []

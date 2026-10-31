@@ -281,9 +281,7 @@ async def simulate_batch_training(
                     is_sequential = False
                     break
 
-                coeff = compute_packaging_coefficient(
-                    d_item.quantity, i_item["amount"]
-                )
+                coeff = compute_packaging_coefficient(d_item.quantity, i_item["amount"])
 
                 temp_seq.append(
                     {
@@ -321,9 +319,7 @@ async def simulate_batch_training(
                 if not i_it["in_active_pool"]:
                     continue
 
-                coeff = compute_packaging_coefficient(
-                    d_it.quantity, i_it["amount"]
-                )
+                coeff = compute_packaging_coefficient(d_it.quantity, i_it["amount"])
 
                 stage2_pairs.append(
                     {

@@ -464,7 +464,9 @@ async def record_mapping_vote(
     clean_name = normalize_item_name(raw_name)
     clean_vendor_article = vendor_article.strip() if vendor_article else ""
     if package_coefficient is None or float(package_coefficient) <= 0:
-        raise ValueError(f"Invalid package_coefficient '{package_coefficient}': must be a strictly positive float.")
+        raise ValueError(
+            f"Invalid package_coefficient '{package_coefficient}': must be a strictly positive float."
+        )
     safe_coeff = float(package_coefficient)
 
     pool = get_db_pool()
@@ -562,7 +564,12 @@ async def get_consensus_mapping(
         r_total = sum(r["usage_count"] for r in raw_rows)
         v_conf = vendor_rows[0]["usage_count"] / v_total
         # If vendor_article has a broader multi-batch history and decisive >75% majority (or if it exposes a conflict), use it
-        rows = vendor_rows if (v_total > r_total and v_conf > 0.75) or (v_total > r_total and len(vendor_rows) > 1 and v_conf <= 0.75) else raw_rows
+        rows = (
+            vendor_rows
+            if (v_total > r_total and v_conf > 0.75)
+            or (v_total > r_total and len(vendor_rows) > 1 and v_conf <= 0.75)
+            else raw_rows
+        )
     else:
         rows = raw_rows
 
@@ -572,7 +579,10 @@ async def get_consensus_mapping(
     total_votes = sum(r["usage_count"] for r in rows)
     winner = rows[0]
     confidence = winner["usage_count"] / total_votes
-    if winner["package_coefficient"] is None or float(winner["package_coefficient"]) <= 0:
+    if (
+        winner["package_coefficient"] is None
+        or float(winner["package_coefficient"]) <= 0
+    ):
         raise ValueError(
             f"Database corruption: mapping for product_id={winner['product_id']} has non-positive package_coefficient."
         )
