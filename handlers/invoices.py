@@ -567,6 +567,31 @@ async def prompt_next_unresolved_item(
 
     article_val = item.get("article", "")
     article_info = t("invoice_article_info", article=article_val) if article_val else ""
+
+    candidates = current["candidates"]
+    if candidates:
+        cand_lines = []
+        for c_idx, c in enumerate(candidates, 1):
+            sku_info = (
+                t("invoice_candidate_sku_fmt", sku=c["article"])
+                if c.get("article")
+                else ""
+            )
+            cand_lines.append(
+                t(
+                    "invoice_candidate_line_fmt",
+                    idx=c_idx,
+                    name=c["name"],
+                    sku_info=sku_info,
+                    score=f"{c['score']:.0f}",
+                )
+            )
+        candidates_info = t(
+            "invoice_candidates_block_fmt", lines="\n".join(cand_lines)
+        )
+    else:
+        candidates_info = ""
+
     card_text = t(
         "invoice_unmatched_item_card",
         current=current["item_idx"],
@@ -575,8 +600,9 @@ async def prompt_next_unresolved_item(
         article_info=article_info,
         sum=item["sum"],
         qty=item["quantity"],
+        candidates_info=candidates_info,
     )
-    markup = get_item_resolution_kb(doc_id, current["item_idx"], current["candidates"])
+    markup = get_item_resolution_kb(doc_id, current["item_idx"], candidates)
 
     if is_new:
         await message.answer(card_text, reply_markup=markup)

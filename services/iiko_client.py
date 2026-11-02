@@ -208,17 +208,19 @@ class IikoClient:
                 logger.warning(f"Failed to write suppliers to Redis cache: {e}")
         return suppliers
 
-    def get_active_stock_products_for_user(self, login: str, password: str) -> list:
-        """Retrieves active product catalog using user credentials with 10-minute cache."""
-        cache_key = "cache:iiko:catalog"
+    def invalidate_catalog_cache(self) -> None:
+        """Purges cached product catalog and root groups from Redis."""
         if self.redis_client:
-            try:
-                cached = self.redis_client.get(cache_key)
-                if cached:
-                    return json.loads(cached)
-            except Exception as e:
-                logger.warning(f"Failed to read cached catalog from Redis: {e}")
+            for key in ("cache:iiko:catalog_v2", "cache:iiko:root_groups"):
+                try:
+                    self.redis_client.delete(key)
+                except Exception as e:
+                    logger.warning(f"Failed to delete Redis cache key '{key}': {e}")
 
+    def _fetch_and_parse_catalog_tree(
+        self, login: str, password: str
+    ) -> tuple[list[dict], list[dict]]:
+        """Fetches /api/products and extracts (root_groups, stock_products_with_ancestors)."""
         resp = self._request_with_user_auth(login, password, "GET", "/api/products")
         root = ET.fromstring(resp.content)
         all_elements = root.findall(".//productDto")
@@ -226,27 +228,21 @@ class IikoClient:
         nodes_by_id = {}
         for p in all_elements:
             node_id = (p.findtext("id") or "").strip()
+            parent_id = (p.findtext("parentId") or "").strip()
+            p_type = (p.findtext("productType") or "").strip()
             if node_id:
                 nodes_by_id[node_id] = {
+                    "id": node_id,
                     "name": (p.findtext("name") or "").strip(),
                     "num": (p.findtext("num") or "").strip(),
                     "code": (p.findtext("code") or "").strip(),
-                    "parent_id": (p.findtext("parentId") or "").strip(),
+                    "parent_id": parent_id,
+                    "product_type": p_type,
                 }
 
-        filter_cfg = cfg["iiko"]["catalog_filter"]
-        include_groups = [
-            str(g).strip().lower()
-            for g in filter_cfg["include_groups"]
-            if str(g).strip()
-        ]
-        exclude_groups = [
-            str(g).strip().lower()
-            for g in filter_cfg["exclude_groups"]
-            if str(g).strip()
-        ]
-
+        stock_group_ids = set()
         clean_products = []
+
         for p in all_elements:
             p_type = (p.findtext("productType") or "").strip()
             if p_type not in ("GOODS", "PREPARED", "MODIFIER"):
@@ -257,7 +253,6 @@ class IikoClient:
             parent_id = (p.findtext("parentId") or "").strip()
             direct_folder_name = nodes_by_id.get(parent_id, {}).get("name", "")
 
-            # Traverse full ancestor hierarchy up to root with cycle guard
             ancestors = []
             curr_id = parent_id
             visited = set()
@@ -265,55 +260,98 @@ class IikoClient:
                 visited.add(curr_id)
                 anc_node = nodes_by_id[curr_id]
                 ancestors.append(anc_node)
+                stock_group_ids.add(curr_id)
                 curr_id = anc_node["parent_id"]
 
-            # 1. Exclusion check across item name, category, and full ancestor chain
-            is_excluded = False
-            for excl in exclude_groups:
-                if (
-                    excl in name.lower()
-                    or excl in cat.lower()
-                    or any(
-                        excl in anc["name"].lower()
-                        or excl == anc["num"].lower()
-                        or excl == anc["code"].lower()
-                        for anc in ancestors
-                    )
-                ):
-                    is_excluded = True
-                    break
-            if is_excluded:
+            if name.lower().startswith("архив.") or "архив" in cat.lower():
                 continue
 
-            # 2. Inclusion whitelist check (if configured, item must reside inside allowed group tree)
-            if include_groups:
-                is_included = any(
-                    incl in anc["name"].lower()
-                    or incl == anc["num"].lower()
-                    or incl == anc["code"].lower()
-                    for anc in ancestors
-                    for incl in include_groups
-                )
-                if not is_included:
-                    continue
+            ancestor_ids = [a["id"] for a in ancestors]
+            num_val = (p.findtext("num") or "").strip()
+            code_val = (p.findtext("code") or "").strip()
 
             clean_products.append(
                 {
-                    "id": p.findtext("id"),
+                    "id": (p.findtext("id") or "").strip(),
                     "name": name,
-                    "article": p.findtext("num", "") or p.findtext("code", ""),
+                    "article": num_val or code_val,
+                    "code": code_val,
                     "category": cat,
                     "folder": direct_folder_name,
+                    "ancestor_ids": ancestor_ids,
                 }
             )
 
-        if self.redis_client and clean_products:
+        top_groups = [
+            node
+            for nid, node in nodes_by_id.items()
+            if nid in stock_group_ids
+            and (not node["parent_id"] or node["parent_id"] not in nodes_by_id)
+        ]
+        if len(top_groups) == 1:
+            master_id = top_groups[0]["id"]
+            child_groups = [
+                node
+                for nid, node in nodes_by_id.items()
+                if nid in stock_group_ids and node["parent_id"] == master_id
+            ]
+            if child_groups:
+                top_groups = child_groups
+
+        root_groups = sorted(
+            [{"id": g["id"], "name": g["name"]} for g in top_groups if g["name"]],
+            key=lambda x: x["name"].lower(),
+        )
+
+        if self.redis_client:
             try:
-                self.redis_client.setex(
-                    cache_key, 600, json.dumps(clean_products, ensure_ascii=False)
-                )
+                if clean_products:
+                    self.redis_client.setex(
+                        "cache:iiko:catalog_v2",
+                        600,
+                        json.dumps(clean_products, ensure_ascii=False),
+                    )
+                if root_groups:
+                    self.redis_client.setex(
+                        "cache:iiko:root_groups",
+                        600,
+                        json.dumps(root_groups, ensure_ascii=False),
+                    )
             except Exception as e:
-                logger.warning(f"Failed to write catalog to Redis cache: {e}")
+                logger.warning(f"Failed to write catalog tree to Redis cache: {e}")
+
+        return root_groups, clean_products
+
+    def get_root_product_groups_for_user(
+        self, login: str, password: str, force_refresh: bool = False
+    ) -> list[dict]:
+        """Retrieves top-level nomenclature folders from iiko."""
+        cache_key = "cache:iiko:root_groups"
+        if not force_refresh and self.redis_client:
+            try:
+                cached = self.redis_client.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(f"Failed to read cached root groups from Redis: {e}")
+
+        root_groups, _ = self._fetch_and_parse_catalog_tree(login, password)
+        return root_groups
+
+    def get_active_stock_products_for_user(
+        self, login: str, password: str, force_refresh: bool = False
+    ) -> list:
+        """Retrieves active product catalog using user credentials with 10-minute cache."""
+        cache_key = "cache:iiko:catalog_v2"
+        if not force_refresh and self.redis_client:
+            try:
+                cached = self.redis_client.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception as e:
+                logger.warning(f"Failed to read cached catalog from Redis: {e}")
+
+        _, clean_products = self._fetch_and_parse_catalog_tree(login, password)
         return clean_products
 
     def get_iiko_departments_for_user(self, login: str, password: str) -> list:
