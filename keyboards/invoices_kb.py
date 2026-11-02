@@ -313,18 +313,28 @@ def get_packaging_coeff_kb(doc_id: str, item_idx: int) -> InlineKeyboardMarkup:
     )
 
 
+def _smart_truncate(text: str, max_len: int = 36) -> str:
+    """Preserves both the product prefix and the distinguishing flavor/weight suffix on inline buttons."""
+    clean = text.strip()
+    if len(clean) <= max_len:
+        return clean
+    head_len = 14
+    tail_len = max_len - head_len - 1
+    return f"{clean[:head_len].rstrip()}…{clean[-tail_len:].lstrip()}"
+
+
 def get_item_resolution_kb(
     doc_id: str, item_idx: int, candidates: List[Dict[str, Any]]
 ) -> InlineKeyboardMarkup:
-    """Generates candidate choice buttons for an unknown raw item."""
+    """Generates candidate choice buttons preserving distinguishing suffixes."""
     rows = []
-    for c in candidates:
-        name = c["name"][:35]
-        score = f"{c['score']:.0f}%"
+    for idx, c in enumerate(candidates, 1):
+        short_name = _smart_truncate(c["name"], max_len=36)
+        score = t("btn_score_fmt", score=f"{c['score']:.0f}")
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{name} ({score})",
+                    text=f"{idx}. {short_name} ({score})",
                     callback_data=f"inv:match:{doc_id}:{item_idx}:{c['id']}",
                 )
             ]

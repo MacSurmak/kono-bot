@@ -7,18 +7,23 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from loguru import logger
 
+import asyncio
+from typing import Optional
 from config import (
     cfg,
     get_admin_ids,
     PAGE_SIZE_USERS,
     PAGE_SIZE_MAPPINGS,
+    PAGE_SIZE_FOLDERS,
 )
+from services.crypto import decrypt_secret
 from services.iiko_client import client
 from keyboards.admin_kb import (
     get_admin_main_kb,
     get_admin_mappings_kb,
     get_admin_users_list_kb,
     get_user_manage_card_kb,
+    get_admin_folders_kb,
 )
 from storage import (
     create_invite_token,
@@ -32,7 +37,11 @@ from storage import (
     search_mappings_for_admin,
     delete_mapping_by_id,
     get_user_stores,
+    sync_and_get_catalog_folders,
+    toggle_catalog_folder,
+    set_all_catalog_folders,
 )
+from handlers.invoices import invalidate_in_memory_catalog_cache
 from lexicon import t
 
 
@@ -244,6 +253,111 @@ async def process_back_main(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         t("admin_panel_title"), reply_markup=get_admin_main_kb(), parse_mode="HTML"
     )
+
+
+# ================= NOMENCLATURE FOLDERS FILTER HANDLERS =================
+@router.callback_query(F.data.startswith("admin:folders:"))
+async def process_admin_folders(
+    callback: types.CallbackQuery, page_override: Optional[int] = None
+):
+    """Displays paginated list of iiko root nomenclature folders for inclusion/exclusion."""
+    if not await is_admin_user(callback.from_user.id):
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    admin = await get_bot_user(callback.from_user.id)
+    if (
+        not admin
+        or not admin.get("iiko_login")
+        or not admin.get("iiko_password_encrypted")
+    ):
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=t("btn_setup_iiko_creds"), callback_data="cab:set_creds"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=t("admin_btn_back"), callback_data="admin:back_main"
+                    ),
+                    InlineKeyboardButton(
+                        text=t("menu_btn_back"), callback_data="menu:back_main"
+                    ),
+                ],
+            ]
+        )
+        await callback.message.edit_text(
+            t("invoice_no_creds_error"), reply_markup=kb, parse_mode="HTML"
+        )
+        return
+
+    if page_override is not None:
+        page = page_override
+    else:
+        parts = callback.data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 1
+
+    login = admin["iiko_login"]
+    password = decrypt_secret(admin["iiko_password_encrypted"])
+
+    remote_groups = await asyncio.to_thread(
+        client.get_root_product_groups_for_user, login, password
+    )
+    folders = await sync_and_get_catalog_folders(remote_groups)
+
+    await callback.message.edit_text(
+        t("admin_folders_title"),
+        reply_markup=get_admin_folders_kb(
+            folders, page=page, page_size=PAGE_SIZE_FOLDERS
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin:toggle_folder:"))
+async def process_toggle_catalog_folder(callback: types.CallbackQuery):
+    """Toggles a single nomenclature folder in the catalog filter."""
+    if not await is_admin_user(callback.from_user.id):
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    parts = callback.data.split(":")
+    folder_id = parts[2]
+    current_page = int(parts[3]) if len(parts) > 3 else 1
+
+    folder_name, is_enabled = await toggle_catalog_folder(folder_id)
+    invalidate_in_memory_catalog_cache()
+
+    toast_key = (
+        "admin_folder_enabled_toast" if is_enabled else "admin_folder_disabled_toast"
+    )
+    await callback.answer(t(toast_key, name=folder_name[:28]))
+    await process_admin_folders(callback, page_override=current_page)
+
+
+@router.callback_query(F.data.startswith("admin:folders_all:"))
+async def process_toggle_all_catalog_folders(callback: types.CallbackQuery):
+    """Enables or disables all nomenclature folders at once."""
+    if not await is_admin_user(callback.from_user.id):
+        await callback.answer(t("admin_access_denied"), show_alert=True)
+        return
+
+    parts = callback.data.split(":")
+    enable_flag = bool(int(parts[2]))
+    current_page = int(parts[3]) if len(parts) > 3 else 1
+
+    await set_all_catalog_folders(enable_flag)
+    invalidate_in_memory_catalog_cache()
+
+    toast_key = (
+        "admin_folders_all_enabled_toast"
+        if enable_flag
+        else "admin_folders_all_disabled_toast"
+    )
+    await callback.answer(t(toast_key))
+    await process_admin_folders(callback, page_override=current_page)
 
 
 # ================= KNOWLEDGE BASE MAPPING REMOVAL HANDLERS =================

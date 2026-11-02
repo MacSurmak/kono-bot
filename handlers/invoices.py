@@ -33,6 +33,8 @@ from storage import (
     save_invoice_session,
     get_invoice_session,
     delete_invoice_session,
+    get_enabled_folder_ids,
+    sync_and_get_catalog_folders,
 )
 from keyboards.invoices_kb import (
     get_invoice_store_choice_kb,
@@ -83,18 +85,56 @@ def get_doc_lock(doc_id: str) -> asyncio.Lock:
     return _DOC_LOCKS[doc_id]
 
 
-async def get_cached_catalog(login: str, password: str) -> list:
+def invalidate_in_memory_catalog_cache() -> None:
+    """Clears in-memory catalog cache when folder filter settings change."""
+    _CATALOG_CACHE["timestamp"] = 0.0
+    _CATALOG_CACHE["data"] = []
+
+
+async def get_cached_catalog(
+    login: str,
+    password: str,
+    ignore_folder_filter: bool = False,
+    force_refresh: bool = False,
+) -> list:
     async with _CACHE_LOCK:
         now = time.monotonic()
-        if not _CATALOG_CACHE["data"] or (
-            now - _CATALOG_CACHE["timestamp"] > CACHE_TTL_CATALOG_SECONDS
+        if (
+            force_refresh
+            or not _CATALOG_CACHE["data"]
+            or (now - _CATALOG_CACHE["timestamp"] > CACHE_TTL_CATALOG_SECONDS)
         ):
             catalog = await asyncio.to_thread(
-                client.get_active_stock_products_for_user, login, password
+                client.get_active_stock_products_for_user,
+                login,
+                password,
+                force_refresh,
             )
             _CATALOG_CACHE["data"] = catalog
             _CATALOG_CACHE["timestamp"] = now
-        return _CATALOG_CACHE["data"]
+
+        all_products = _CATALOG_CACHE["data"]
+
+    if ignore_folder_filter:
+        return all_products
+
+    enabled_folders = await get_enabled_folder_ids()
+    if enabled_folders is None:
+        root_groups = await asyncio.to_thread(
+            client.get_root_product_groups_for_user, login, password
+        )
+        await sync_and_get_catalog_folders(root_groups)
+        enabled_folders = await get_enabled_folder_ids()
+
+    if enabled_folders is None:
+        return all_products
+
+    return [
+        p
+        for p in all_products
+        if not p.get("ancestor_ids")
+        or any(aid in enabled_folders for aid in p["ancestor_ids"])
+    ]
 
 
 async def get_cached_suppliers(login: str, password: str) -> dict:
@@ -626,17 +666,37 @@ async def handle_manual_sku_input(message: types.Message, state: FSMContext):
     login = operator["iiko_login"]
     password = decrypt_secret(operator["iiko_password_encrypted"])
 
-    catalog = await get_cached_catalog(login, password)
+    # Manual SKU input searches across ALL iiko folders (ignore_folder_filter=True)
+    catalog = await get_cached_catalog(
+        login, password, ignore_folder_filter=True, force_refresh=False
+    )
     clean_sku = sku.lower()
     prod = next(
         (
             p
             for p in catalog
             if p.get("article", "").strip().lower() == clean_sku
+            or p.get("code", "").strip().lower() == clean_sku
             or p.get("id", "").strip().lower() == clean_sku
         ),
         None,
     )
+
+    # If not found in cache, force-refresh live catalog from iiko API (handles newly created/moved items)
+    if not prod:
+        catalog = await get_cached_catalog(
+            login, password, ignore_folder_filter=True, force_refresh=True
+        )
+        prod = next(
+            (
+                p
+                for p in catalog
+                if p.get("article", "").strip().lower() == clean_sku
+                or p.get("code", "").strip().lower() == clean_sku
+                or p.get("id", "").strip().lower() == clean_sku
+            ),
+            None,
+        )
 
     if not prod:
         await message.answer(t("invoice_sku_not_found", sku=sku))
@@ -680,7 +740,7 @@ async def process_manual_match(callback: types.CallbackQuery):
     login = operator["iiko_login"]
     password = decrypt_secret(operator["iiko_password_encrypted"])
 
-    catalog = await get_cached_catalog(login, password)
+    catalog = await get_cached_catalog(login, password, ignore_folder_filter=True)
     prod = next((p for p in catalog if p["id"] == prod_id), None)
     if not prod:
         await callback.answer(t("invoice_sku_not_found", sku=prod_id), show_alert=True)
@@ -835,7 +895,7 @@ async def apply_confirmed_item_match(
         login = operator["iiko_login"]
         password = decrypt_secret(operator["iiko_password_encrypted"])
 
-        catalog = await get_cached_catalog(login, password)
+        catalog = await get_cached_catalog(login, password, ignore_folder_filter=True)
         prod = next((p for p in catalog if p["id"] == prod_id), None)
         if not prod:
             return

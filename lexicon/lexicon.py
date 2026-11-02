@@ -83,6 +83,21 @@ LEXICON: Dict[str, str] = {
     "admin_cannot_modify_primary": "⛔ Запрещено разжаловать или блокировать первичного администратора сети.",
     "admin_btn_mappings": "🗑 Удаление сопоставлений",
     "admin_btn_search_again": "🔍 Искать снова",
+    "admin_btn_folders": "📂 Папки номенклатуры iiko",
+    "admin_folders_title": (
+        "📂 <b>Папки номенклатуры iiko (фильтр каталога):</b>\n\n"
+        "Отмеченные (✅) папки участвуют в автоматическом подборе кандидатов и пакетном обучении.\n"
+        "<i>При ручном вводе артикула поиск всегда идет по всем папкам iiko.</i>"
+    ),
+    "admin_btn_enable_all_folders": "✅ Включить все",
+    "admin_btn_disable_all_folders": "⬜ Отключить все",
+    "admin_folder_enabled_toast": "✅ Папка «{name}» включена",
+    "admin_folder_disabled_toast": "⬜ Папка «{name}» отключена",
+    "admin_folders_all_enabled_toast": "✅ Все папки номенклатуры включены",
+    "admin_folders_all_disabled_toast": "⬜ Все папки отключены (отметьте нужные)",
+    "invoice_candidate_sku_fmt": " (арт. <code>{sku}</code>)",
+    "invoice_candidate_line_fmt": "<b>{idx}.</b> {name}{sku_info} — <i>{score}%</i>",
+    "invoice_candidates_block_fmt": "\n\n📋 <b>Варианты из каталога iiko:</b>\n{lines}",
     "badge_admin": "👑 ",
     "badge_operator": "👤 ",
     "badge_blocked": " [БЛОК]",
@@ -230,7 +245,8 @@ LEXICON: Dict[str, str] = {
         "Наименование поставщика:\n"
         "👉 <b>«{raw_name}»</b>"
         "{article_info}\n\n"
-        "Сумма строки: {sum:,.2f} ₽ (кол-во: {qty})\n\n"
+        "Сумма строки: {sum:,.2f} ₽ (кол-во: {qty})"
+        "{candidates_info}\n\n"
         "Выберите соответствие из каталога iiko:"
     ),
     "invoice_enter_sku_prompt": (

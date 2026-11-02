@@ -146,6 +146,11 @@ def get_admin_main_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text=t("admin_btn_folders"), callback_data="admin:folders:1"
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text=t("admin_btn_training"), callback_data="admin:training_menu"
                 )
             ],
@@ -159,6 +164,82 @@ def get_admin_main_kb() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def get_admin_folders_kb(
+    folders: List[Dict[str, Any]], page: int = 1, page_size: int = 6
+) -> InlineKeyboardMarkup:
+    """Constructs paginated nomenclature folder filter keyboard for Admin UI."""
+    total_items = len(folders)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+
+    start = (page - 1) * page_size
+    current_slice = folders[start : start + page_size]
+
+    rows = []
+    for f in current_slice:
+        f_id = f["id"]
+        f_name = f["name"]
+        prefix = t("checkbox_checked") if f["is_enabled"] else t("checkbox_unchecked")
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{prefix}{f_name[:34]}",
+                    callback_data=f"admin:toggle_folder:{f_id}:{page}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("admin_btn_enable_all_folders"),
+                callback_data=f"admin:folders_all:1:{page}",
+            ),
+            InlineKeyboardButton(
+                text=t("admin_btn_disable_all_folders"),
+                callback_data=f"admin:folders_all:0:{page}",
+            ),
+        ]
+    )
+
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="◀️", callback_data=f"admin:folders:{page - 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+
+        nav_row.append(
+            InlineKeyboardButton(text=f"{page} / {total_pages}", callback_data="noop")
+        )
+
+        if page < total_pages:
+            nav_row.append(
+                InlineKeyboardButton(
+                    text="▶️", callback_data=f"admin:folders:{page + 1}"
+                )
+            )
+        else:
+            nav_row.append(InlineKeyboardButton(text="⏹", callback_data="noop"))
+        rows.append(nav_row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("admin_btn_back"), callback_data="admin:back_main"
+            ),
+            InlineKeyboardButton(
+                text=t("menu_btn_back"), callback_data="menu:back_main"
+            ),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_training_accumulator_kb(

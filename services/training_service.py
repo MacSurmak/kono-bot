@@ -12,7 +12,12 @@ from loguru import logger
 from models import RawInvoiceDocument
 from parsers import parse_document
 from services.iiko_client import client
-from storage import get_db_pool, record_mapping_vote
+from storage import (
+    get_db_pool,
+    record_mapping_vote,
+    get_enabled_folder_ids,
+    sync_and_get_catalog_folders,
+)
 
 # Expanded limits for bulk network ingestion
 MAX_BATCH_FILES = 2000
@@ -158,10 +163,28 @@ async def simulate_batch_training(
     date_from = (min_doc_date - timedelta(days=DATE_BUFFER_DAYS)).strftime("%Y-%m-%d")
     date_to = (max_doc_date + timedelta(days=DATE_BUFFER_DAYS)).strftime("%Y-%m-%d")
 
-    # Fetch active catalog and historical invoices from iiko under admin credentials
-    active_products = await asyncio.to_thread(
+    # Fetch active catalog and filter by enabled nomenclature folders configured in Admin UI
+    all_products = await asyncio.to_thread(
         client.get_active_stock_products_for_user, login, password
     )
+    enabled_folders = await get_enabled_folder_ids()
+    if enabled_folders is None:
+        root_groups = await asyncio.to_thread(
+            client.get_root_product_groups_for_user, login, password
+        )
+        await sync_and_get_catalog_folders(root_groups)
+        enabled_folders = await get_enabled_folder_ids()
+
+    if enabled_folders is not None:
+        active_products = [
+            p
+            for p in all_products
+            if not p.get("ancestor_ids")
+            or any(aid in enabled_folders for aid in p["ancestor_ids"])
+        ]
+    else:
+        active_products = all_products
+
     active_pool = {p["id"]: p for p in active_products}
     suppliers_grouped = await asyncio.to_thread(
         client.get_suppliers_grouped_for_user, login, password

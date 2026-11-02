@@ -194,6 +194,16 @@ async def init_db() -> asyncpg.Pool:
                 );
             """)
 
+            # 9. Nomenclature root folders filter managed via Admin UI
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS catalog_folders (
+                    folder_id TEXT PRIMARY KEY,
+                    folder_name TEXT NOT NULL,
+                    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
     logger.info("PostgreSQL schema validated and initialized successfully.")
     return _POOL
 
@@ -434,6 +444,96 @@ async def toggle_user_store(user_id: int, store_id: str, store_name: str) -> boo
                 store_name,
             )
             return True
+
+
+# ================= CATALOG FOLDERS FILTER REPOSITORY =================
+async def sync_and_get_catalog_folders(
+    remote_folders: List[Dict[str, str]]
+) -> List[Dict[str, Any]]:
+    """Synchronizes iiko top-level nomenclature groups with persistent UI filter table."""
+    pool = get_db_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            for rf in remote_folders:
+                f_id = rf["id"]
+                f_name = rf["name"]
+                default_enabled = not any(
+                    excl in f_name.lower()
+                    for excl in ("архив", "агрегаторы яе", "яе мск", "яе калининград")
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO catalog_folders (folder_id, folder_name, is_enabled, updated_at)
+                    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+                    ON CONFLICT (folder_id) DO UPDATE SET
+                        folder_name = EXCLUDED.folder_name;
+                """,
+                    f_id,
+                    f_name,
+                    default_enabled,
+                )
+
+            remote_ids = [rf["id"] for rf in remote_folders]
+            if remote_ids:
+                rows = await conn.fetch(
+                    """
+                    SELECT folder_id, folder_name, is_enabled
+                    FROM catalog_folders
+                    WHERE folder_id = ANY($1::text[])
+                    ORDER BY folder_name ASC;
+                """,
+                    remote_ids,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT folder_id, folder_name, is_enabled FROM catalog_folders ORDER BY folder_name ASC;"
+                )
+            return [
+                {
+                    "id": r["folder_id"],
+                    "name": r["folder_name"],
+                    "is_enabled": bool(r["is_enabled"]),
+                }
+                for r in rows
+            ]
+
+
+async def get_enabled_folder_ids() -> Optional[set]:
+    """Returns set of enabled root folder IDs, or None if folder table has not been initialized yet."""
+    pool = get_db_pool()
+    total = await pool.fetchval("SELECT COUNT(*) FROM catalog_folders;")
+    if not total:
+        return None
+    rows = await pool.fetch(
+        "SELECT folder_id FROM catalog_folders WHERE is_enabled = TRUE;"
+    )
+    return {r["folder_id"] for r in rows}
+
+
+async def toggle_catalog_folder(folder_id: str) -> Tuple[str, bool]:
+    """Flips is_enabled flag for a single nomenclature folder and returns (folder_name, new_state)."""
+    pool = get_db_pool()
+    row = await pool.fetchrow(
+        """
+        UPDATE catalog_folders
+        SET is_enabled = NOT is_enabled, updated_at = CURRENT_TIMESTAMP
+        WHERE folder_id = $1
+        RETURNING folder_name, is_enabled;
+    """,
+        folder_id,
+    )
+    if not row:
+        raise KeyError(f"Catalog folder '{folder_id}' not found in database.")
+    return row["folder_name"], bool(row["is_enabled"])
+
+
+async def set_all_catalog_folders(is_enabled: bool) -> None:
+    """Enables or disables all tracked nomenclature folders at once."""
+    pool = get_db_pool()
+    await pool.execute(
+        "UPDATE catalog_folders SET is_enabled = $1, updated_at = CURRENT_TIMESTAMP;",
+        is_enabled,
+    )
 
 
 # ================= MAPPINGS, CONSENSUS & GOVERNANCE =================
